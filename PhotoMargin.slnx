@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PhotoMargin.Core/PhotoMargin.Core.csproj" />
+    <Project Path="src/PhotoMargin.Imaging/PhotoMargin.Imaging.csproj" />
+    <Project Path="src/PhotoMargin.App/PhotoMargin.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PhotoMargin.Core.Tests/PhotoMargin.Core.Tests.csproj" />
+    <Project Path="tests/PhotoMargin.Imaging.Tests/PhotoMargin.Imaging.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/PhotoMargin.SampleGenerator/PhotoMargin.SampleGenerator.csproj" />
+  </Folder>
+</Solution>

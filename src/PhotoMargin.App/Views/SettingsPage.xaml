@@ -1,0 +1,96 @@
+<Page x:Class="PhotoMargin.App.Views.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#272727" /></ResourceDictionary>
+                <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#FAFAFA" /></ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" /></ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Page.Resources>
+    <Page.KeyboardAccelerators><KeyboardAccelerator Key="Left" Modifiers="Menu" Invoked="BackAccelerator_Invoked" /></Page.KeyboardAccelerators>
+    <Grid>
+    <NavigationView x:Name="SettingsNavigation" PaneDisplayMode="Auto" OpenPaneLength="320" IsPaneOpen="True"
+                    ExpandedModeThresholdWidth="900" CompactModeThresholdWidth="640" AlwaysShowHeader="False"
+                    IsSettingsVisible="False" IsBackButtonVisible="Visible" IsBackEnabled="True"
+                    BackRequested="Navigation_BackRequested" SelectionChanged="Navigation_SelectionChanged"
+                    DisplayModeChanged="Navigation_DisplayModeChanged">
+        <NavigationView.PaneHeader><Grid x:Name="PaneHeaderSpace" Height="0" /></NavigationView.PaneHeader>
+        <NavigationView.AutoSuggestBox>
+            <AutoSuggestBox x:Name="SettingsSearch" PlaceholderText="Search" QueryIcon="Find" TextChanged="Search_TextChanged"
+                            AutomationProperties.Name="搜尋設定導覽項目" />
+        </NavigationView.AutoSuggestBox>
+        <NavigationView.MenuItems>
+            <NavigationViewItem x:Name="GeneralItem" Content="一般設定" Tag="General"><NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem x:Name="LayoutItem" Content="版面設定" Tag="Layout"><NavigationViewItem.Icon><SymbolIcon Symbol="Page" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem x:Name="CameraItem" Content="相機資訊設定" Tag="Camera"><NavigationViewItem.Icon><SymbolIcon Symbol="Camera" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem x:Name="ExportItem" Content="匯出設定" Tag="Export"><NavigationViewItem.Icon><SymbolIcon Symbol="Save" /></NavigationViewItem.Icon></NavigationViewItem>
+        </NavigationView.MenuItems>
+        <Border Background="{ThemeResource SettingsSurfaceBrush}" CornerRadius="4,0,0,0" Margin="0,8,0,0">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,24,24,16" HorizontalContentAlignment="Stretch">
+                <Grid x:Name="SettingsContentHost">
+                <Grid Width="{Binding ActualWidth, ElementName=SettingsContentHost}" MaxWidth="720" HorizontalAlignment="Left">
+                    <StackPanel x:Name="GeneralContent" Spacing="20">
+                        <TextBlock Text="一般設定" Style="{ThemeResource TitleTextBlockStyle}" />
+                        <RadioButtons x:Name="ThemeOptions" Header="主題" MaxColumns="1" SelectedIndex="{Binding ThemeChoice, Mode=TwoWay}">
+                            <x:String>系統預設</x:String><x:String>深色</x:String><x:String>淺色</x:String>
+                        </RadioButtons>
+                    </StackPanel>
+                    <StackPanel x:Name="LayoutContent" Spacing="16" Visibility="Collapsed">
+                        <TextBlock Text="版面設定" Style="{ThemeResource TitleTextBlockStyle}" />
+                        <ComboBox x:Name="RuleEditorSelector" Header="邊距規則" HorizontalAlignment="Stretch" ItemsSource="{Binding MarginRules}"
+                                  DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding RuleEditor.SelectedRuleId, Mode=TwoWay}" />
+                        <TextBox Header="規則名稱" MaxLength="60" Text="{Binding RuleEditor.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Text="以下數值以 1080 畫布為基準，依輸出尺寸等比例縮放。" TextWrapping="Wrap" />
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <NumberBox Header="左右邊距" Minimum="0" Maximum="400" Value="{Binding RuleEditor.Side, Mode=TwoWay}" />
+                            <NumberBox Grid.Column="1" Header="上方邊距" Minimum="0" Maximum="400" Value="{Binding RuleEditor.Top, Mode=TwoWay}" />
+                        </Grid>
+                        <Grid ColumnSpacing="16">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <NumberBox Header="照片資訊間距" Minimum="0" Maximum="200" Value="{Binding RuleEditor.Gap, Mode=TwoWay}" />
+                            <NumberBox Grid.Column="1" Header="底部安全距離" Minimum="0" Maximum="540" Value="{Binding RuleEditor.Bottom, Mode=TwoWay}" />
+                        </Grid>
+                        <NumberBox Header="裁切額外文字留白" Minimum="0" Maximum="200" Value="{Binding RuleEditor.Extra, Mode=TwoWay}" />
+                        <CheckBox Content="保護 4:5 直向裁切" IsChecked="{Binding RuleEditor.ProtectPortrait, Mode=TwoWay}" />
+                        <CheckBox Content="保護 5:4 橫向裁切" IsChecked="{Binding RuleEditor.ProtectLandscape, Mode=TwoWay}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Button x:Name="NewRuleButton" Content="新增規則" Click="NewRule_Click" />
+                            <Button x:Name="SaveRuleButton" Content="儲存規則" Click="SaveRule_Click" Style="{StaticResource AccentButtonStyle}" />
+                            <Button x:Name="DeleteRuleButton" Content="刪除規則" Click="DeleteRule_Click" IsEnabled="{Binding RuleEditor.CanDelete}" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding RuleEditor.Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                    <StackPanel x:Name="CameraContent" Spacing="16" Visibility="Collapsed">
+                        <TextBlock Text="相機資訊設定" Style="{ThemeResource TitleTextBlockStyle}" />
+                        <TextBlock Text="照片資訊由來源 EXIF 自動讀取；手動修改及重新讀取請使用主畫面的照片資訊區。" TextWrapping="Wrap" />
+                        <TextBlock Text="缺少 EXIF 的欄位保持空白。拍攝日期缺值時，使用來源檔案的建立日期與時間。" TextWrapping="Wrap" />
+                        <TextBlock Text="目前來源" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <TextBlock Text="{Binding SourceFileName}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding SourceSummary}" TextWrapping="Wrap" />
+                        <TextBlock Text="拍攝時間來源" />
+                        <TextBlock Text="{Binding CaptureTimeSource}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel x:Name="ExportContent" Spacing="16" Visibility="Collapsed">
+                        <TextBlock Text="匯出設定" Style="{ThemeResource TitleTextBlockStyle}" />
+                        <NumberBox Header="正方形輸出尺寸（px）" Minimum="320" Maximum="8192" Value="{Binding OutputSize, Mode=TwoWay}" />
+                        <StackPanel Spacing="8"><TextBlock Text="JPG 品質" /><Slider Minimum="50" Maximum="100" StepFrequency="1" Value="{Binding JpegQuality, Mode=TwoWay}" AutomationProperties.Name="JPG 品質" /></StackPanel>
+                        <TextBlock Text="輸出為 1:1 JPG。裁切與安全線僅用於預覽，不會寫入成品。" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+    </NavigationView>
+    <StackPanel x:Name="SettingsHeaderButtons" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="8,8,0,0" Visibility="Collapsed">
+        <Button x:Name="SettingsBackButton" Click="HeaderBack_Click" Background="Transparent" BorderThickness="0" Padding="12,8" TabIndex="0"
+                ToolTipService.ToolTip="返回" AutomationProperties.Name="返回"><SymbolIcon Symbol="Back" /></Button>
+        <Button x:Name="SettingsPaneToggleButton" Click="HeaderPaneToggle_Click" Background="Transparent" BorderThickness="0" Padding="12,8" TabIndex="1"
+                ToolTipService.ToolTip="收合設定導覽" AutomationProperties.Name="收合設定導覽"><SymbolIcon Symbol="GlobalNavigationButton" /></Button>
+    </StackPanel>
+    </Grid>
+</Page>

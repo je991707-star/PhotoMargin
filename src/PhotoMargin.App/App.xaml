@@ -1,0 +1,32 @@
+<Application
+    x:Class="PhotoMargin.App.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <Color x:Key="SystemAccentColor">#59CEF7</Color>
+                    <Color x:Key="SystemAccentColorDark1">#59CEF7</Color>
+                    <Color x:Key="SystemAccentColorDark2">#43B7DE</Color>
+                    <Color x:Key="SystemAccentColorDark3">#299CC2</Color>
+                    <Color x:Key="SystemAccentColorLight1">#72D8FA</Color>
+                    <Color x:Key="SystemAccentColorLight2">#59CEF7</Color>
+                    <Color x:Key="SystemAccentColorLight3">#59CEF7</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <Color x:Key="SystemAccentColor">#59CEF7</Color>
+                    <Color x:Key="SystemAccentColorDark1">#59CEF7</Color>
+                    <Color x:Key="SystemAccentColorDark2">#43B7DE</Color>
+                    <Color x:Key="SystemAccentColorDark3">#299CC2</Color>
+                    <Color x:Key="SystemAccentColorLight1">#72D8FA</Color>
+                    <Color x:Key="SystemAccentColorLight2">#59CEF7</Color>
+                    <Color x:Key="SystemAccentColorLight3">#59CEF7</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
