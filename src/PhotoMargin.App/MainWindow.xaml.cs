@@ -170,7 +170,8 @@ public sealed partial class MainWindow : Window
             { writer.WriteBytes(bytes); await writer.StoreAsync(); await writer.FlushAsync(); writer.DetachStream(); }
             stream.Seek(0);
             var bitmap = new BitmapImage(); await bitmap.SetSourceAsync(stream);
-            if (!closed && version == bitmapVersion && ReferenceEquals(bytes, ViewModel.PreviewBytes)) PreviewImage.Source = bitmap;
+            if (!closed && version == bitmapVersion && ReferenceEquals(bytes, ViewModel.PreviewBytes))
+            { PreviewImage.Source = bitmap; }
         }
         catch (Exception) when (closed || version != bitmapVersion) { }
     }
@@ -185,9 +186,11 @@ public sealed partial class MainWindow : Window
     }
     private async Task SaveBeforeCloseAsync()
     {
-        closing = true; InteractionHost.IsEnabled = false;
+        closing = true;
         try
         {
+            if (SettingsFrame.Content is SettingsPage page && !await page.PrepareToLeaveAsync()) return;
+            InteractionHost.IsEnabled = false;
             await Initialization;
             await ViewModel.FlushSettingsAsync();
             allowClose = true;

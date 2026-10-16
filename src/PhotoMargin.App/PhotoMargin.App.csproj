@@ -20,6 +20,8 @@
   </ItemGroup>
   <ItemGroup Condition="'$(Configuration)' == 'Debug'">
     <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\SettingsNavigationRegression.cs" />
+    <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\PresetWorkflowRegression.cs" />
+    <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\AspectPreviewRegression.cs" />
   </ItemGroup>
   <Target Name="CopyWinUiApplicationResourcesToPublish" AfterTargets="Publish">
     <ItemGroup>

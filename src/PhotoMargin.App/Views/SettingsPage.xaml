@@ -5,9 +5,9 @@
     <Page.Resources>
         <ResourceDictionary>
             <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#272727" /></ResourceDictionary>
-                <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#FAFAFA" /></ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" /></ResourceDictionary>
+                <ResourceDictionary x:Key="Dark"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#272727" /><SolidColorBrush x:Key="PresetPreviewBrush" Color="#202020" /></ResourceDictionary>
+                <ResourceDictionary x:Key="Light"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="#FAFAFA" /><SolidColorBrush x:Key="PresetPreviewBrush" Color="#EEEEEE" /></ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast"><SolidColorBrush x:Key="SettingsSurfaceBrush" Color="{ThemeResource SystemColorWindowColor}" /><SolidColorBrush x:Key="PresetPreviewBrush" Color="{ThemeResource SystemColorWindowColor}" /></ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Page.Resources>
@@ -30,7 +30,8 @@
             <NavigationViewItem x:Name="ExportItem" Content="匯出設定" Tag="Export"><NavigationViewItem.Icon><SymbolIcon Symbol="Save" /></NavigationViewItem.Icon></NavigationViewItem>
         </NavigationView.MenuItems>
         <Border Background="{ThemeResource SettingsSurfaceBrush}" CornerRadius="4,0,0,0" Margin="0,8,0,0">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,24,24,16" HorizontalContentAlignment="Stretch">
+            <Grid>
+            <ScrollViewer x:Name="CommonSettingsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,24,24,16" HorizontalContentAlignment="Stretch">
                 <Grid x:Name="SettingsContentHost">
                 <Grid Width="{Binding ActualWidth, ElementName=SettingsContentHost}" MaxWidth="720" HorizontalAlignment="Left">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -40,34 +41,6 @@
                             <x:String>系統預設</x:String><x:String>深色</x:String><x:String>淺色</x:String>
                         </RadioButtons>
                     </StackPanel>
-                    <ContentControl IsEnabled="{Binding RuleEditor.CanEdit}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top">
-                    <StackPanel x:Name="LayoutContent" Spacing="16" Visibility="Collapsed">
-                        <TextBlock Text="版面設定" Style="{ThemeResource TitleTextBlockStyle}" />
-                        <ComboBox x:Name="RuleEditorSelector" Header="邊距規則" HorizontalAlignment="Stretch" ItemsSource="{Binding MarginRules}"
-                                  DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding RuleEditor.SelectedRuleId, Mode=TwoWay}" />
-                        <TextBox Header="規則名稱" MaxLength="60" Text="{Binding RuleEditor.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                        <TextBlock Text="以下數值以 1080 畫布為基準，依輸出尺寸等比例縮放。" TextWrapping="Wrap" />
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <NumberBox Header="左右邊距" Minimum="0" Maximum="400" Value="{Binding RuleEditor.Side, Mode=TwoWay}" />
-                            <NumberBox Grid.Column="1" Header="上方邊距" Minimum="0" Maximum="400" Value="{Binding RuleEditor.Top, Mode=TwoWay}" />
-                        </Grid>
-                        <Grid ColumnSpacing="16">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                            <NumberBox Header="照片資訊間距" Minimum="0" Maximum="200" Value="{Binding RuleEditor.Gap, Mode=TwoWay}" />
-                            <NumberBox Grid.Column="1" Header="底部安全距離" Minimum="0" Maximum="540" Value="{Binding RuleEditor.Bottom, Mode=TwoWay}" />
-                        </Grid>
-                        <NumberBox Header="裁切額外文字留白" Minimum="0" Maximum="200" Value="{Binding RuleEditor.Extra, Mode=TwoWay}" />
-                        <CheckBox Content="保護 4:5 直向裁切" IsChecked="{Binding RuleEditor.ProtectPortrait, Mode=TwoWay}" />
-                        <CheckBox Content="保護 5:4 橫向裁切" IsChecked="{Binding RuleEditor.ProtectLandscape, Mode=TwoWay}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <Button x:Name="NewRuleButton" Content="新增規則" Click="NewRule_Click" />
-                            <Button x:Name="SaveRuleButton" Content="儲存規則" Click="SaveRule_Click" Style="{StaticResource AccentButtonStyle}" />
-                            <Button x:Name="DeleteRuleButton" Content="刪除規則" Click="DeleteRule_Click" IsEnabled="{Binding RuleEditor.CanDelete}" />
-                        </StackPanel>
-                        <TextBlock Text="{Binding RuleEditor.Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
-                    </StackPanel>
-                    </ContentControl>
                     <StackPanel x:Name="CameraContent" Spacing="16" Visibility="Collapsed">
                         <TextBlock Text="相機資訊設定" Style="{ThemeResource TitleTextBlockStyle}" />
                         <TextBlock Text="照片資訊由來源 EXIF 自動讀取；手動修改及重新讀取請使用主畫面的照片資訊區。" TextWrapping="Wrap" />
@@ -88,6 +61,71 @@
                 </Grid>
                 </Grid>
             </ScrollViewer>
+            <Grid x:Name="LayoutContent" Padding="24,24,12,24" RowSpacing="40" Visibility="Collapsed">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <TextBlock Text="版面設定" Style="{ThemeResource TitleTextBlockStyle}" />
+                <Grid x:Name="PresetWorkspace" Grid.Row="1" ColumnSpacing="20" RowSpacing="16" SizeChanged="PresetWorkspace_SizeChanged">
+                    <Grid.ColumnDefinitions><ColumnDefinition x:Name="PresetPreviewColumn" Width="*" /><ColumnDefinition x:Name="PresetControlsColumn" Width="0.46*" MinWidth="240" MaxWidth="360" /></Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions><RowDefinition x:Name="PresetPreviewRow" Height="*" /><RowDefinition x:Name="PresetControlsRow" Height="0" /></Grid.RowDefinitions>
+                    <Border x:Name="PresetPreviewSurface" Background="{ThemeResource PresetPreviewBrush}" CornerRadius="4" Padding="30">
+                        <Viewbox x:Name="PresetPreviewViewbox" Stretch="Uniform">
+                            <Grid Width="1080" Height="1080" Background="White">
+                                <Image x:Name="RulePreviewImage" Stretch="Uniform" AutomationProperties.Name="目前作品版面預覽" />
+                            </Grid>
+                        </Viewbox>
+                    </Border>
+                    <ScrollViewer x:Name="PresetControlsScroller" Grid.Column="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch" Padding="0,0,12,0">
+                        <StackPanel Spacing="12">
+                            <ComboBox x:Name="RuleEditorSelector" Header="邊距規則" HorizontalAlignment="Stretch" ItemsSource="{Binding MarginRules}"
+                                      DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding RuleEditor.SelectedRuleId, Mode=OneWay}"
+                                      IsEnabled="{Binding RuleEditor.CanEdit}" SelectionChanged="RuleSelection_Changed" />
+                            <ComboBox x:Name="ImageAspectSelector" Header="圖片比例" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding RuleEditor.AspectChoices}" SelectedIndex="{Binding RuleEditor.AspectIndex, Mode=TwoWay}"
+                                      IsEnabled="{Binding RuleEditor.CanEdit}" AutomationProperties.Name="圖片比例" />
+                            <RadioButtons x:Name="RuleModeOptions" Header="規則編輯模式" MaxColumns="1" SelectedIndex="{Binding RuleEditor.ModeIndex, Mode=OneWay}"
+                                          IsEnabled="{Binding RuleEditor.CanEdit}" SelectionChanged="RuleMode_Changed">
+                                <x:String>套用預設內容</x:String><x:String>編輯預設內容</x:String>
+                            </RadioButtons>
+                            <ContentControl IsEnabled="{Binding RuleEditor.CanAdjustValues}" HorizontalContentAlignment="Stretch">
+                                <StackPanel Spacing="12">
+                                    <TextBox x:Name="PresetNameBox" Header="規則名稱" MaxLength="60" Text="{Binding RuleEditor.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="左右邊距" /><TextBlock x:Name="SideMarginValue" Grid.Column="1" Text="{Binding RuleEditor.SideText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="SideMarginSlider" Minimum="0" Maximum="400" StepFrequency="1" Value="{Binding RuleEditor.Side, Mode=TwoWay}" AutomationProperties.Name="左右邊距（1080 基準 px）" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="上方邊距" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.TopText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="TopMarginSlider" Minimum="0" Maximum="400" StepFrequency="1" Value="{Binding RuleEditor.Top, Mode=TwoWay}" AutomationProperties.Name="上方邊距（1080 基準 px）" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="底部安全距離" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.BottomText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="BottomMarginSlider" Minimum="0" Maximum="540" StepFrequency="1" Value="{Binding RuleEditor.Bottom, Mode=TwoWay}" AutomationProperties.Name="底部安全距離（1080 基準 px）" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="照片資訊間距" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.GapText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="InformationGapSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.Gap, Mode=TwoWay}" AutomationProperties.Name="照片資訊間距（1080 基準 px）" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="裁切文字額外留白" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.ExtraText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="ExtraPaddingSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.Extra, Mode=TwoWay}" AutomationProperties.Name="裁切文字額外留白（1080 基準 px）" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </ContentControl>
+                            <Grid ColumnSpacing="12" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                <Button x:Name="SaveRuleButton" MinWidth="100" Content="儲存預設" Click="SaveRule_Click" Style="{StaticResource AccentButtonStyle}" IsEnabled="{Binding RuleEditor.CanSave}" />
+                                <Button x:Name="DeleteRuleButton" Grid.Column="1" MinWidth="100" Content="刪除預設" Click="DeleteRule_Click" IsEnabled="{Binding RuleEditor.CanDelete}">
+                                    <Button.Resources><ResourceDictionary Source="ms-appx:///Views/DangerButtonResources.xaml" /></Button.Resources>
+                                </Button>
+                            </Grid>
+                            <TextBlock Text="{Binding RuleEditor.Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                            <TextBlock Text="{Binding RuleEditor.PreviewError}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                            <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Grid>
+            </Grid>
+            </Grid>
         </Border>
     </NavigationView>
     <StackPanel x:Name="SettingsHeaderButtons" Orientation="Horizontal" VerticalAlignment="Top" HorizontalAlignment="Left" Margin="8,8,0,0" Visibility="Collapsed">

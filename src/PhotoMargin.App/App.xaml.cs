@@ -17,6 +17,31 @@ public partial class App : Application
         try
         {
 #if DEBUG
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-aspects" or "--verify-aspects-restore"))
+            {
+                var restore = Environment.GetCommandLineArgs().Contains("--verify-aspects-restore");
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-aspect-settings.json");
+                if (!restore && File.Exists(testSettings)) File.Delete(testSettings);
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings));
+                window = testWindow; window.Activate();
+                _ = restore ? testWindow.RunAspectRestoreAsync() : testWindow.RunAspectPreviewAsync(); return;
+            }
+            if (Environment.GetCommandLineArgs().Contains("--verify-presets-restore"))
+            {
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-preset-settings.json");
+                if (!File.Exists(testSettings)) throw new InvalidOperationException("請先執行 --verify-presets。");
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings));
+                window = testWindow; window.Activate(); _ = testWindow.RunPresetRestoreRegressionAsync(); return;
+            }
+            if (Environment.GetCommandLineArgs().Contains("--verify-presets"))
+            {
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-preset-settings.json");
+                if (File.Exists(testSettings)) File.Delete(testSettings);
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings));
+                window = testWindow; window.Activate();
+                _ = testWindow.RunPresetWorkflowRegressionAsync();
+                return;
+            }
             if (Environment.GetCommandLineArgs().Contains("--verify-close-save"))
             {
                 var testWindow = new MainWindow(new Services.SettingsStore(Path.Combine(AppContext.BaseDirectory, "close-save-settings.json")));

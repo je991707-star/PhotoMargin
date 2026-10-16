@@ -179,10 +179,12 @@ public sealed partial class MainWindow
             await Task.Delay(600);
             await CaptureWorkspaceAsync("figma-settings-layout.png");
             await CaptureWindowAsync("figma-settings-layout-window.png");
-            ViewModel.RuleEditor.New(); ViewModel.RuleEditor.Name = "QA margin rule"; ViewModel.RuleEditor.Side = 64;
+            ViewModel.RuleEditor.AspectIndex = (int)ViewModel.WorkAspect;
+            ViewModel.RuleEditor.Name = "QA margin rule"; ViewModel.RuleEditor.Side = 64;
             Check(await ViewModel.RuleEditor.SaveAsync(), "Save new margin rule", checks);
             var rule = ViewModel.MarginRules.First(item => item.Name == "QA margin rule");
-            Check(ViewModel.SelectedMarginRuleId == MarginRule.DefaultId && ViewModel.PhotoSideMargin == 48, "Saving another rule keeps existing selection", checks);
+            Check(ViewModel.SelectedMarginRuleId == MarginRule.DefaultId && ViewModel.PhotoSideMargin == 64 && ViewModel.MarginRules.First(rule => rule.Id == MarginRule.DefaultId).Side == 48,
+                "Apply-mode changes work, saving another preset never overwrites original", checks);
             page.RequestBack(); await Task.Delay(100);
             Check(WorkspaceGrid.Visibility == Visibility.Visible && ViewModel.SourcePath == fixture && ViewModel.Camera == "Keep manual camera", "Direct layout return preserves work", checks);
             ViewModel.SelectedMarginRuleId = rule.Id; await WaitForPreviewAsync();

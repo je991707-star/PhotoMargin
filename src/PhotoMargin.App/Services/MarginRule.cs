@@ -1,4 +1,5 @@
 using PhotoMargin.Core.Models;
+using PhotoMargin.Core;
 
 namespace PhotoMargin.App.Services;
 
@@ -16,7 +17,18 @@ public sealed record MarginRule
     public bool ProtectPortrait { get; init; } = true;
     public bool ProtectLandscape { get; init; } = true;
 
-    public MarginRule Validate() => this with
+    public RatioConfigurations? Configurations { get; init; }
+    public MarginConfiguration ForAspect(SourceAspect aspect) => Configurations?.Get(aspect) ?? MarginConfiguration.From(this);
+    public MarginRule WithConfiguration(SourceAspect aspect, MarginConfiguration value) =>
+        (this with { Configurations = (Configurations ?? RatioConfigurations.FromLegacy(this)).With(aspect, value) }).Validate();
+    public MarginRule Validate()
+    {
+        var normalized = ValidateValues();
+        var configurations = (Configurations ?? RatioConfigurations.FromLegacy(normalized)).CopyValidated(normalized);
+        // Flat fields remain the 4:3 compatibility snapshot; ratio data is authoritative.
+        return configurations.FourByThree.ToRule() with { Id = Id, Name = normalized.Name, Configurations = configurations };
+    }
+    internal MarginRule ValidateValues() => this with
     {
         Name = string.IsNullOrWhiteSpace(Name) ? "未命名規則" : Name.Trim(),
         Side = Clamp(Side, 400, 48), Top = Clamp(Top, 400, 36),

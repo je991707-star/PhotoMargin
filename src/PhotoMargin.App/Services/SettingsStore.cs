@@ -1,5 +1,6 @@
 using System.Text.Json;
 using PhotoMargin.Core.Models;
+using PhotoMargin.Core;
 
 namespace PhotoMargin.App.Services;
 
@@ -12,14 +13,15 @@ public enum ThemePreference
 
 public sealed record PersistedSettings
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 5;
     public int Version { get; init; } = CurrentVersion;
     public LayoutSettings Layout { get; init; } = new();
     public bool ShowGuides { get; init; } = true;
     public ThemePreference Theme { get; init; } = ThemePreference.System;
     public string? LastOutputDirectory { get; init; }
     public List<MarginRule> MarginRules { get; init; } = [];
-    public string SelectedMarginRuleId { get; init; } = MarginRule.DefaultId;
+    public string? SelectedMarginRuleId { get; init; } = MarginRule.DefaultId;
+    public SourceAspect DemonstrationAspect { get; init; } = SourceAspect.FourByThree;
 }
 
 public sealed class SettingsStore
@@ -40,6 +42,7 @@ public sealed class SettingsStore
     }
 
     internal SettingsStore(string settingsPath) => this.settingsPath = Path.GetFullPath(settingsPath);
+    private static PersistedSettings InitialSettings() => new() { MarginRules = [new MarginRule()] };
 
     public async Task<PersistedSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -47,38 +50,42 @@ public sealed class SettingsStore
         {
             if (!File.Exists(settingsPath))
             {
-                return new PersistedSettings();
+                return InitialSettings();
             }
 
             // A reader may finish reading the previous snapshot while another process replaces it.
             await using var stream = new FileStream(settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             var value = await JsonSerializer.DeserializeAsync<PersistedSettings>(stream, Options, cancellationToken);
-            if (value is null || value.Version is not (2 or PersistedSettings.CurrentVersion))
+            if (value is null || value.Version is not (2 or 3 or 4 or PersistedSettings.CurrentVersion))
             {
-                return new PersistedSettings();
+                return InitialSettings();
             }
 
             var layout = (value.Layout ?? new LayoutSettings()).Validate();
+            var rules = (value.MarginRules ?? []).Where(rule => rule is not null && !string.IsNullOrWhiteSpace(rule.Id))
+                .DistinctBy(rule => rule.Id).Select(rule => rule.Validate() with { }).ToList();
+            // Only legacy documents need a built-in seed. A v4 empty list is deliberate.
+            if (value.Version < 4 && !rules.Any(rule => rule.Id == MarginRule.DefaultId)) rules.Insert(0, MarginRule.FromLayout(layout).Validate());
             return value with
             {
                 Version = PersistedSettings.CurrentVersion,
                 Layout = layout with { Visibility = layout.Visibility ?? new FieldVisibility() },
-                MarginRules = (value.MarginRules ?? []).Where(rule => rule is not null && !string.IsNullOrWhiteSpace(rule.Id))
-                    .DistinctBy(rule => rule.Id).Select(rule => rule.Validate()).ToList(),
+                MarginRules = rules,
+                DemonstrationAspect = Enum.IsDefined(value.DemonstrationAspect) ? value.DemonstrationAspect : SourceAspect.FourByThree,
                 Theme = Enum.IsDefined(value.Theme) ? value.Theme : ThemePreference.System
             };
         }
         catch (JsonException)
         {
-            return new PersistedSettings();
+            return InitialSettings();
         }
         catch (IOException)
         {
-            return new PersistedSettings();
+            return InitialSettings();
         }
         catch (UnauthorizedAccessException)
         {
-            return new PersistedSettings();
+            return InitialSettings();
         }
     }
 
@@ -95,7 +102,11 @@ public sealed class SettingsStore
             temporary = settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
             await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
-                await JsonSerializer.SerializeAsync(stream, settings, Options, cancellationToken).ConfigureAwait(false);
+                await JsonSerializer.SerializeAsync(stream, settings with
+                {
+                    Version = PersistedSettings.CurrentVersion,
+                    MarginRules = settings.MarginRules.Select(rule => rule.Validate()).ToList()
+                }, Options, cancellationToken).ConfigureAwait(false);
             }
 
             await using var commitLock = await AcquireCommitLockAsync(cancellationToken).ConfigureAwait(false);

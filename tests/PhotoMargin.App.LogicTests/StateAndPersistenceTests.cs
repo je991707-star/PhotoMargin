@@ -12,7 +12,7 @@ namespace PhotoMargin.App.LogicTests;
 
 // Exercise the actual production ViewModels on a serialized UI-like context,
 // without introducing a dependency on a WinUI window or changing production code.
-public sealed class StateAndPersistenceTests : IDisposable
+public sealed partial class StateAndPersistenceTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "PhotoMargin.LogicTests", Guid.NewGuid().ToString("N"));
     public StateAndPersistenceTests() => Directory.CreateDirectory(root);
@@ -65,24 +65,28 @@ public sealed class StateAndPersistenceTests : IDisposable
     public void FailedRuleSaveRetainsDraftAndRetryDoesNotDuplicate() => Ui.Run(async () =>
     {
         var path = BlockedStore(); using var vm = Create(path); await vm.InitializeAsync();
-        vm.RuleEditor.New(); vm.RuleEditor.Name = "Retry rule"; vm.RuleEditor.Side = 65;
+        vm.RuleEditor.Name = "Retry rule"; vm.RuleEditor.Side = 65;
         Assert.False(await vm.RuleEditor.SaveAsync()); Assert.Contains("尚未儲存", vm.RuleEditor.Message);
         Assert.Equal("Retry rule", vm.RuleEditor.Name); Assert.Equal(65, vm.RuleEditor.Side);
         File.Delete(Path.GetDirectoryName(path)!); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        Assert.True(await vm.RuleEditor.SaveAsync()); Assert.Equal("規則已儲存。", vm.RuleEditor.Message);
+        Assert.True(await vm.RuleEditor.SaveAsync()); Assert.Equal("預設已儲存。", vm.RuleEditor.Message);
         Assert.Single((await new SettingsStore(path).LoadAsync()).MarginRules, rule => rule.Name == "Retry rule");
     });
 
     [Fact]
     public void FailedDeleteRestoresRuleAndCanBeRetried() => Ui.Run(async () =>
     {
-        var path = BlockedStore(); using var vm = Create(path); await vm.InitializeAsync();
-        vm.RuleEditor.New(); vm.RuleEditor.Name = "Delete rule"; Assert.False(await vm.RuleEditor.SaveAsync());
+        var directory = Path.Combine(root, "delete-store"); var path = Path.Combine(directory, "settings.json");
+        using var vm = Create(path); await vm.InitializeAsync();
+        vm.RuleEditor.Name = "Delete rule"; Assert.True(await vm.RuleEditor.SaveAsync());
         var id = vm.RuleEditor.SelectedRuleId;
-        await vm.RuleEditor.DeleteAsync(); Assert.Contains("未刪除", vm.RuleEditor.Message);
-        Assert.Contains(vm.MarginRules, rule => rule.Id == id); Assert.True(vm.RuleEditor.CanDelete);
-        File.Delete(Path.GetDirectoryName(path)!); Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await vm.RuleEditor.DeleteAsync(); Assert.Equal("規則已刪除。", vm.RuleEditor.Message);
+        await vm.RuleEditor.ChangeModeAsync(PresetMode.Edit);
+        Directory.Move(directory, directory + "-backup"); File.WriteAllText(directory, "Owned blocker");
+        var request = vm.RuleEditor.BeginDeletion()!; request.Acknowledged = true;
+        Assert.False(await vm.RuleEditor.DeleteAsync(request)); Assert.Contains("未刪除", vm.RuleEditor.Message);
+        Assert.Contains(vm.MarginRules, rule => rule.Id == id);
+        File.Delete(directory); Directory.Move(directory + "-backup", directory);
+        Assert.True(await vm.RuleEditor.DeleteAsync(request)); Assert.Equal("預設已永久刪除。", vm.RuleEditor.Message);
         Assert.DoesNotContain((await new SettingsStore(path).LoadAsync()).MarginRules, rule => rule.Id == id);
     });
 
