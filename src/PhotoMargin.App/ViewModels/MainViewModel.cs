@@ -29,6 +29,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private DisplayMetadata originalDisplay = new("", "", "", "", "", "", "");
     private int renderVersion, sourceVersion, informationVersion;
     private bool applyingValues, disposed;
+    private long saveRevision;
+    private string previewError = "", persistenceError = "";
     private string camera = "", lens = "", focalLength = "", aperture = "", shutter = "", iso = "";
     private string shutterInput = "", inputError = "", captureTimeSource = "尚未載入照片";
     private DateTimeOffset? selectedDate;
@@ -158,7 +160,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public string SourceFileSizeText { get; private set; } = "";
     public string SourceSummary { get => sourceSummary; private set { if (SetProperty(ref sourceSummary, value)) OnPropertyChanged(nameof(PreviewCaption)); } }
     public string StatusText { get => statusText; private set { if (SetProperty(ref statusText, value)) OnPropertyChanged(nameof(PreviewCaption)); } }
-    public string ErrorText { get => errorText; private set { if (SetProperty(ref errorText, value)) { OnPropertyChanged(nameof(HasError)); OnPropertyChanged(nameof(PreviewCaption)); } } }
+    public string ErrorText { get => string.Join("；", new[] { previewError, errorText, persistenceError }.Where(value => value.Length > 0)); private set { errorText = value; NotifyErrors(); } }
+    public string PersistenceError => persistenceError;
+    private void NotifyErrors()
+    { OnPropertyChanged(nameof(ErrorText)); OnPropertyChanged(nameof(HasError)); OnPropertyChanged(nameof(PreviewCaption)); }
+    private void SetPreviewError(string value) { previewError = value; NotifyErrors(); }
+    private void SetPersistenceError(string value) { persistenceError = value; OnPropertyChanged(nameof(PersistenceError)); NotifyErrors(); }
     public bool HasError => ErrorText.Length > 0;
     public string PreviewCaption => string.Join(" · ", new[] { SourceSummary, InputError.Length > 0 ? InputError : ErrorText.Length > 0 ? ErrorText : StatusText }.Where(text => text.Length > 0));
     public byte[]? PreviewBytes { get => previewBytes; private set => SetProperty(ref previewBytes, value); }
@@ -195,7 +202,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             {
                 if (disposed) return;
                 photo?.Dispose(); photo = candidate; candidate = null;
-                sourceVersion++; currentLayout = null; PreviewBytes = null;
+                sourceVersion++; currentLayout = null; PreviewBytes = null; SetPreviewError("");
                 ApplyPhotoInformation(photo.Metadata, captured); UpdateSourceSummary(photo.Metadata);
                 SourceFileSizeText = bytes >= 1048576 ? $"{bytes / 1048576d:0.##} MB" : $"{bytes / 1024d:0.#} KB";
                 foreach (var property in new[] { nameof(HasPhoto), nameof(SourcePath), nameof(SourceFileName), nameof(SourceFileSizeText), nameof(CanReload), nameof(CanExport) }) OnPropertyChanged(property);
@@ -245,31 +252,43 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             await renderGate.WaitAsync(lifetime.Token);
             try { await exportService.ExportJpegAsync(photo!, layout, destinationPath, quality, lifetime.Token); }
             finally { renderGate.Release(); }
-            persisted = BuildPersisted() with { LastOutputDirectory = Path.GetDirectoryName(destinationPath) };
-            await settingsStore.SaveAsync(persisted, lifetime.Token);
             StatusText = $"已匯出：{Path.GetFileName(destinationPath)}";
+            persisted = BuildPersisted() with { LastOutputDirectory = Path.GetDirectoryName(destinationPath) };
+            // The image is already committed. Preference failure is a separate warning,
+            // never a failed export or a reason to retry writing the same image.
+            await SaveSettingsQuietlyAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception exception) { if (!disposed) { ErrorText = exception.Message; StatusText = "匯出失敗"; } }
         finally { if (!disposed) IsBusy = false; }
     }
-    internal void SaveRule(MarginRule rule)
+    internal async Task<bool> SaveRuleAsync(MarginRule rule)
     {
         rule = rule.Validate();
         var index = MarginRules.ToList().FindIndex(item => item.Id == rule.Id);
         if (index >= 0) MarginRules[index] = rule; else MarginRules.Add(rule);
         if (selectedMarginRuleId == rule.Id) { ApplyRule(rule); RequestPreview(true); }
-        OnPropertyChanged(nameof(SelectedMarginRuleId)); _ = SaveSettingsQuietlyAsync();
+        OnPropertyChanged(nameof(SelectedMarginRuleId)); return await SaveSettingsQuietlyAsync();
     }
-    internal void DeleteRule(string id)
+    internal async Task<bool> DeleteRuleAsync(string id)
     {
         var rule = MarginRules.FirstOrDefault(item => item.Id == id);
-        if (rule is null || id == MarginRule.DefaultId) return;
+        if (rule is null || id == MarginRule.DefaultId) return false;
+        var index = MarginRules.IndexOf(rule);
+        var selected = SelectedMarginRuleId;
         MarginRules.Remove(rule);
         if (selectedMarginRuleId == id) SelectedMarginRuleId = MarginRule.DefaultId;
-        OnPropertyChanged(nameof(SelectedMarginRuleId)); _ = SaveSettingsQuietlyAsync();
+        OnPropertyChanged(nameof(SelectedMarginRuleId));
+        if (await SaveSettingsQuietlyAsync()) return true;
+        // A failed deletion must remain available for retry, not disappear from the editor.
+        MarginRules.Insert(Math.Min(index, MarginRules.Count), rule);
+        SelectedMarginRuleId = selected;
+        return false;
     }
-    internal Task FlushSettingsAsync() => settingsStore.SaveAsync(BuildPersisted());
+    internal async Task FlushSettingsAsync()
+    {
+        if (!await SaveSettingsQuietlyAsync()) throw new IOException(PersistenceError);
+    }
     private void ApplyRule(MarginRule rule)
     {
         photoSideMargin = rule.Side; photoTopMargin = rule.Top; photoInfoGap = rule.Gap;
@@ -303,19 +322,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 var layout = layoutEngine.Calculate(photo.OrientedSize, GetDisplayMetadata(), BuildLayoutSettings());
                 if (!layout.IsValid)
                 {
-                    if (version == renderVersion) { ErrorText = string.Join("；", layout.Errors); StatusText = "安全檢查失敗，無法匯出"; }
+                    if (!disposed && version == renderVersion && !token.IsCancellationRequested)
+                        SetPreviewError("安全檢查失敗，無法匯出：" + string.Join("；", layout.Errors));
                     return;
                 }
                 var bytes = await previewService.RenderAsync(photo, layout, ShowGuides, token);
                 if (disposed || version != renderVersion || token.IsCancellationRequested) return;
-                currentLayout = layout; PreviewBytes = bytes; ErrorText = "";
-                if (StatusText.StartsWith("正在", StringComparison.Ordinal)) StatusText = "";
+                currentLayout = layout; PreviewBytes = bytes; SetPreviewError("");
                 OnPropertyChanged(nameof(CanExport));
             }
             finally { renderGate.Release(); }
         }
         catch (OperationCanceledException) { }
-        catch (Exception exception) { if (!disposed && version == renderVersion) ErrorText = $"預覽失敗：{exception.Message}"; }
+        catch (Exception exception) { if (!disposed && version == renderVersion) SetPreviewError($"預覽失敗：{exception.Message}"); }
     }
     private LayoutSettings BuildLayoutSettings() => new LayoutSettings
     {
@@ -347,12 +366,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Layout = BuildLayoutSettings(), ShowGuides = ShowGuides, Theme = (ThemePreference)ThemeChoice,
         LastOutputDirectory = persisted.LastOutputDirectory, MarginRules = MarginRules.ToList(), SelectedMarginRuleId = SelectedMarginRuleId
     };
-    private async Task SaveSettingsQuietlyAsync()
+    private async Task<bool> SaveSettingsQuietlyAsync()
     {
-        try { persisted = BuildPersisted(); await settingsStore.SaveAsync(persisted, lifetime.Token); }
-        catch (OperationCanceledException) { }
+        var revision = ++saveRevision;
+        try
+        {
+            persisted = BuildPersisted();
+            // Rendering cancellation must not cancel a user's already queued preferences.
+            await settingsStore.SaveAsync(persisted);
+            if (!disposed && revision == saveRevision) SetPersistenceError("");
+            return true;
+        }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        { if (!disposed) ErrorText = $"無法儲存設定：{exception.Message}"; }
+        { if (!disposed && revision == saveRevision) SetPersistenceError($"無法儲存設定：{exception.Message}"); return false; }
     }
     private void CancelPreview() { previewCancellation?.Cancel(); previewCancellation?.Dispose(); previewCancellation = null; }
     private static double Finite(double value, double fallback, double min, double max) => Math.Clamp(double.IsFinite(value) ? value : fallback, min, max);

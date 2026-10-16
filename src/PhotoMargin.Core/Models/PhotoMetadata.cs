@@ -15,8 +15,8 @@ public sealed record PhotoMetadata
     public string? DateSource { get; init; }
 
     public string CameraDisplay => JoinNonEmpty(Make, Model);
-    public string FocalLengthDisplay => FocalLengthMm is > 0 ? $"{FocalLengthMm:0.#}mm" : string.Empty;
-    public string ApertureDisplay => FNumber is > 0 ? $"f/{FNumber:0.#}" : string.Empty;
+    public string FocalLengthDisplay => FocalLengthMm is > 0 && double.IsFinite(FocalLengthMm.Value) ? FocalLengthMm.Value.ToString("0.#", CultureInfo.InvariantCulture) + "mm" : string.Empty;
+    public string ApertureDisplay => FNumber is > 0 && double.IsFinite(FNumber.Value) ? "f/" + FNumber.Value.ToString("0.#", CultureInfo.InvariantCulture) : string.Empty;
     public string ShutterDisplay => FormatShutter(ExposureSeconds);
     public string IsoDisplay => Iso is > 0 ? $"ISO {Iso}" : string.Empty;
 
@@ -32,7 +32,7 @@ public sealed record PhotoMetadata
 
         if (seconds.Value >= 1)
         {
-            return $"{seconds.Value:0.#}s";
+            return seconds.Value.ToString("0.#", CultureInfo.InvariantCulture) + "s";
         }
 
         var reciprocal = 1d / seconds.Value;

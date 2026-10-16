@@ -17,6 +17,13 @@ public partial class App : Application
         try
         {
 #if DEBUG
+            if (Environment.GetCommandLineArgs().Contains("--verify-close-save"))
+            {
+                var testWindow = new MainWindow(new Services.SettingsStore(Path.Combine(AppContext.BaseDirectory, "close-save-settings.json")));
+                window = testWindow; window.Activate();
+                _ = testWindow.RunCloseSaveRegressionAsync();
+                return;
+            }
             if (Environment.GetCommandLineArgs().Contains("--verify-arrangement-restore"))
             {
                 var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-figma-regression-settings.json");

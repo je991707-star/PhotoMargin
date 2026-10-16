@@ -39,7 +39,7 @@ public sealed class SettingsStore
     {
     }
 
-    internal SettingsStore(string settingsPath) => this.settingsPath = settingsPath;
+    internal SettingsStore(string settingsPath) => this.settingsPath = Path.GetFullPath(settingsPath);
 
     public async Task<PersistedSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
@@ -50,7 +50,8 @@ public sealed class SettingsStore
                 return new PersistedSettings();
             }
 
-            await using var stream = File.OpenRead(settingsPath);
+            // A reader may finish reading the previous snapshot while another process replaces it.
+            await using var stream = new FileStream(settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             var value = await JsonSerializer.DeserializeAsync<PersistedSettings>(stream, Options, cancellationToken);
             if (value is null || value.Version is not (2 or PersistedSettings.CurrentVersion))
             {
@@ -84,21 +85,41 @@ public sealed class SettingsStore
     public async Task SaveAsync(PersistedSettings settings, CancellationToken cancellationToken = default)
     {
         await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        string? temporary = null;
         try
         {
             var directory = Path.GetDirectoryName(settingsPath)!;
             Directory.CreateDirectory(directory);
-            var temporary = settingsPath + ".tmp";
-            await using (var stream = File.Create(temporary))
+            // Each writer owns its temporary file. Cross-process commits are serialized below;
+            // each save is a complete snapshot, with the last completed commit winning.
+            temporary = settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            await using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             {
                 await JsonSerializer.SerializeAsync(stream, settings, Options, cancellationToken).ConfigureAwait(false);
             }
 
+            await using var commitLock = await AcquireCommitLockAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
             File.Move(temporary, settingsPath, true);
         }
         finally
         {
-            writeGate.Release();
+            try { if (temporary is not null && File.Exists(temporary)) File.Delete(temporary); }
+            finally { writeGate.Release(); }
+        }
+    }
+
+    private async Task<FileStream> AcquireCommitLockAsync(CancellationToken cancellationToken)
+    {
+        // An OS-owned sharing lock also works across processes and is released on a crash.
+        // Keep the empty lock file: deleting it would introduce an unlink/reopen race.
+        var deadline = Environment.TickCount64 + 5000;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try { return new FileStream(settingsPath + ".lock", FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
+            catch (IOException exception) when ((exception.HResult & 0xffff) is 32 or 33 && Environment.TickCount64 < deadline)
+            { await Task.Delay(25, cancellationToken).ConfigureAwait(false); }
         }
     }
 }

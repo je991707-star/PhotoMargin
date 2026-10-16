@@ -33,12 +33,14 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,24,24,16" HorizontalContentAlignment="Stretch">
                 <Grid x:Name="SettingsContentHost">
                 <Grid Width="{Binding ActualWidth, ElementName=SettingsContentHost}" MaxWidth="720" HorizontalAlignment="Left">
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <StackPanel x:Name="GeneralContent" Spacing="20">
                         <TextBlock Text="一般設定" Style="{ThemeResource TitleTextBlockStyle}" />
                         <RadioButtons x:Name="ThemeOptions" Header="主題" MaxColumns="1" SelectedIndex="{Binding ThemeChoice, Mode=TwoWay}">
                             <x:String>系統預設</x:String><x:String>深色</x:String><x:String>淺色</x:String>
                         </RadioButtons>
                     </StackPanel>
+                    <ContentControl IsEnabled="{Binding RuleEditor.CanEdit}" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top">
                     <StackPanel x:Name="LayoutContent" Spacing="16" Visibility="Collapsed">
                         <TextBlock Text="版面設定" Style="{ThemeResource TitleTextBlockStyle}" />
                         <ComboBox x:Name="RuleEditorSelector" Header="邊距規則" HorizontalAlignment="Stretch" ItemsSource="{Binding MarginRules}"
@@ -65,6 +67,7 @@
                         </StackPanel>
                         <TextBlock Text="{Binding RuleEditor.Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                     </StackPanel>
+                    </ContentControl>
                     <StackPanel x:Name="CameraContent" Spacing="16" Visibility="Collapsed">
                         <TextBlock Text="相機資訊設定" Style="{ThemeResource TitleTextBlockStyle}" />
                         <TextBlock Text="照片資訊由來源 EXIF 自動讀取；手動修改及重新讀取請使用主畫面的照片資訊區。" TextWrapping="Wrap" />
@@ -81,6 +84,7 @@
                         <StackPanel Spacing="8"><TextBlock Text="JPG 品質" /><Slider Minimum="50" Maximum="100" StepFrequency="1" Value="{Binding JpegQuality, Mode=TwoWay}" AutomationProperties.Name="JPG 品質" /></StackPanel>
                         <TextBlock Text="輸出為 1:1 JPG。裁切與安全線僅用於預覽，不會寫入成品。" TextWrapping="Wrap" />
                     </StackPanel>
+                    <TextBlock Grid.Row="1" Text="{Binding PersistenceError}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 </Grid>
                 </Grid>
             </ScrollViewer>

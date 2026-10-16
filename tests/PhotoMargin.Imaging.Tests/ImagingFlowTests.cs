@@ -1,12 +1,15 @@
 using ImageMagick;
 using PhotoMargin.Core;
 using PhotoMargin.Core.Models;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace PhotoMargin.Imaging.Tests;
 
 public sealed class ImagingFlowTests : IDisposable
 {
     private readonly string tempDirectory = Path.Combine(Path.GetTempPath(), "PhotoMargin.Tests", Guid.NewGuid().ToString("N"));
+    private readonly List<string> ownedJunctions = [];
 
     public ImagingFlowTests() => Directory.CreateDirectory(tempDirectory);
 
@@ -181,8 +184,64 @@ public sealed class ImagingFlowTests : IDisposable
         Assert.Equal(16, metadata.CapturedAt.Value.Hour);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExportRefusesPhysicalSourceAliasesWithoutChangingSource(bool junction)
+    {
+        var actualDirectory = Path.Combine(tempDirectory, "real"); Directory.CreateDirectory(actualDirectory);
+        var source = Path.Combine(actualDirectory, "source.jpg");
+        using (var input = new MagickImage(MagickColors.Blue, 900, 600)) input.Write(source);
+        string alias;
+        if (junction)
+        {
+            var aliasDirectory = Path.Combine(tempDirectory, "alias");
+            var start = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
+            start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-NonInteractive"); start.ArgumentList.Add("-Command");
+            start.ArgumentList.Add($"$ErrorActionPreference='Stop'; New-Item -ItemType Junction -Path '{aliasDirectory.Replace("'", "''")}' -Target '{actualDirectory.Replace("'", "''")}' | Out-Null");
+            using var process = Process.Start(start)!; await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+            Assert.True(process.ExitCode == 0, await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken));
+            ownedJunctions.Add(aliasDirectory);
+            alias = Path.Combine(aliasDirectory, "source.jpg");
+        }
+        else
+        {
+            alias = Path.Combine(tempDirectory, "hardlink.jpg");
+            Assert.True(CreateHardLink(alias, source, IntPtr.Zero), "Cannot create an owned NTFS hard-link fixture.");
+        }
+        var before = await File.ReadAllBytesAsync(source, TestContext.Current.CancellationToken);
+        using var photo = new ImageLoader(new ExifReader()).Load(source, TestContext.Current.CancellationToken);
+        var layout = new LayoutEngine(new MagickTextMeasurer()).Calculate(photo.OrientedSize,
+            new DisplayMetadata("", "", "", "", "", "", ""), new LayoutSettings());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new ExportService(new ImageRenderer()).ExportJpegAsync(photo, layout, alias, 95, TestContext.Current.CancellationToken));
+        Assert.Equal(before, await File.ReadAllBytesAsync(source, TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.GetFiles(tempDirectory, "*.tmp", SearchOption.AllDirectories));
+    }
+
+    [Fact]
+    public async Task CancelledExportPreservesExistingOutput()
+    {
+        var source = Path.Combine(tempDirectory, "cancel-source.png");
+        using (var input = new MagickImage(MagickColors.Blue, 900, 600)) input.Write(source);
+        var destination = Path.Combine(tempDirectory, "previous.jpg");
+        var original = new byte[] { 1, 2, 3 }; await File.WriteAllBytesAsync(destination, original, TestContext.Current.CancellationToken);
+        using var photo = new ImageLoader(new ExifReader()).Load(source, TestContext.Current.CancellationToken);
+        var layout = new LayoutEngine(new MagickTextMeasurer()).Calculate(photo.OrientedSize,
+            new DisplayMetadata("", "", "", "", "", "", ""), new LayoutSettings());
+        using var cancellation = new CancellationTokenSource(); cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new ExportService(new ImageRenderer()).ExportJpegAsync(photo, layout, destination, 95, cancellation.Token));
+        Assert.Equal(original, await File.ReadAllBytesAsync(destination, TestContext.Current.CancellationToken));
+        Assert.Empty(Directory.GetFiles(tempDirectory, "*.tmp"));
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateHardLink(string newName, string existingName, IntPtr attributes);
+
     public void Dispose()
     {
+        // Remove only the owned junction itself before its target, never recurse into it.
+        foreach (var junction in ownedJunctions) Directory.Delete(junction, false);
         if (Directory.Exists(tempDirectory))
         {
             Directory.Delete(tempDirectory, true);

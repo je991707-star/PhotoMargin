@@ -69,7 +69,7 @@ public sealed partial class SettingsPage : Page
             item.Visibility = item.Content?.ToString()?.Contains(query, StringComparison.CurrentCultureIgnoreCase) == true ? Visibility.Visible : Visibility.Collapsed;
     }
     private void NewRule_Click(object sender, RoutedEventArgs e) => viewModel.RuleEditor.New();
-    private void SaveRule_Click(object sender, RoutedEventArgs e) => viewModel.RuleEditor.Save();
+    private async void SaveRule_Click(object sender, RoutedEventArgs e) => await viewModel.RuleEditor.SaveAsync();
     private async void DeleteRule_Click(object sender, RoutedEventArgs e)
     {
         if (!viewModel.RuleEditor.CanDelete) return;
@@ -78,6 +78,6 @@ public sealed partial class SettingsPage : Page
             XamlRoot = XamlRoot, Title = "刪除邊距規則？", Content = $"確定刪除「{viewModel.RuleEditor.Name}」？",
             PrimaryButtonText = "刪除", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary) viewModel.RuleEditor.Delete();
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary) await viewModel.RuleEditor.DeleteAsync();
     }
 }

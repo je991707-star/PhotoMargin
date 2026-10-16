@@ -1,6 +1,7 @@
 <Window x:Class="PhotoMargin.App.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="PhotoMargin">
+    <ContentControl x:Name="InteractionHost" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
     <Grid x:Name="RootGrid" Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.Resources>
             <ResourceDictionary>
@@ -175,4 +176,5 @@
         </Grid>
         <Frame x:Name="SettingsFrame" Visibility="Collapsed" />
     </Grid>
+    </ContentControl>
 </Window>

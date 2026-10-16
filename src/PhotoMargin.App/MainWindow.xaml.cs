@@ -21,7 +21,7 @@ public sealed partial class MainWindow : Window
 {
     private readonly FileDialogService dialogs;
     private readonly WindowSizingConstraints sizingConstraints;
-    private bool syncingOutputSize, closed;
+    private bool syncingOutputSize, closed, closing, allowClose;
     private int bitmapVersion;
     private Control? settingsOrigin;
     public MainViewModel ViewModel { get; }
@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
         ViewModel.PropertyChanged += ViewModel_PropertyChanged;
         Closed += MainWindow_Closed;
         var id = Win32Interop.GetWindowIdFromWindow(WindowNative.GetWindowHandle(this));
+        AppWindow.GetFromWindowId(id).Closing += MainWindow_Closing;
         var workArea = DisplayArea.GetFromWindowId(id, DisplayAreaFallback.Primary).WorkArea;
         AppWindow.GetFromWindowId(id).Resize(new SizeInt32(Math.Min(1344, workArea.Width), Math.Min(892, workArea.Height)));
         sizingConstraints = new WindowSizingConstraints(WindowNative.GetWindowHandle(this));
@@ -175,4 +176,35 @@ public sealed partial class MainWindow : Window
     }
     private void MainWindow_Closed(object sender, WindowEventArgs args)
     { closed = true; bitmapVersion++; ViewModel.PropertyChanged -= ViewModel_PropertyChanged; sizingConstraints.Dispose(); ViewModel.Dispose(); }
+
+    private void MainWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (allowClose) return;
+        args.Cancel = true;
+        if (!closing) _ = SaveBeforeCloseAsync();
+    }
+    private async Task SaveBeforeCloseAsync()
+    {
+        closing = true; InteractionHost.IsEnabled = false;
+        try
+        {
+            await Initialization;
+            await ViewModel.FlushSettingsAsync();
+            allowClose = true;
+        }
+        catch (Exception exception)
+        {
+            InteractionHost.IsEnabled = true;
+            var dialog = new ContentDialog
+            {
+                XamlRoot = RootGrid.XamlRoot, Title = "設定尚未儲存",
+                Content = $"{exception.Message}\n留在程式可重試；仍然關閉會放棄尚未保存的設定。",
+                PrimaryButtonText = "仍然關閉", CloseButtonText = "留在程式", DefaultButton = ContentDialogButton.Close
+            };
+            try { allowClose = await dialog.ShowAsync() == ContentDialogResult.Primary; }
+            catch (Exception) { allowClose = false; } // Another native dialog may already be open; keep the work alive.
+        }
+        finally { closing = false; if (!allowClose) InteractionHost.IsEnabled = true; }
+        if (allowClose) Close();
+    }
 }

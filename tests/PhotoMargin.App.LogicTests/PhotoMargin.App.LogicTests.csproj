@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <PlatformTarget>x64</PlatformTarget>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/PhotoMargin.Imaging/PhotoMargin.Imaging.csproj" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
+    <Compile Include="../../src/PhotoMargin.App/ViewModels/MainViewModel.cs" Link="Production/MainViewModel.cs" />
+    <Compile Include="../../src/PhotoMargin.App/ViewModels/RuleEditorViewModel.cs" Link="Production/RuleEditorViewModel.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/SettingsStore.cs" Link="Production/SettingsStore.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/PreviewService.cs" Link="Production/PreviewService.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/MarginRule.cs" Link="Production/MarginRule.cs" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+</Project>

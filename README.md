@@ -1,6 +1,6 @@
 # PhotoMargin
 
-目前版本：**0.0.1**。版本集中於 `Directory.Build.props`，主畫面狀態列從實際組件版本讀取。
+目前版本：**0.0.2**。版本集中於 `Directory.Build.props`，主畫面狀態列從實際組件版本讀取。
 
 PhotoMargin 是 Windows 攝影作品白框工具。第一版以橫向 JPG／PNG 為主，將照片完整放入 1:1 白色畫布，在底部加入可編輯的機身、鏡頭與 EXIF 資訊，並保護 4:5、5:4 置中裁切安全區。
 
@@ -53,6 +53,14 @@ dotnet test .\PhotoMargin.sln -c Debug
 
 測試覆蓋裁切幾何、縮放、安全區、方向政策、長文字自適應、EXIF 顯示格式、透明 PNG、CMYK、Orientation 旋轉與來源檔防覆寫。
 
+另包含直接連結正式 ViewModel／保存服務的邏輯測試，覆蓋預覽失敗後恢復、保存錯誤、規則保存／刪除重試、匯出部分成功、關閉時待寫設定、多個儲存實例及小數逗號地區。來源防覆寫測試包含 NTFS junction 與 hard link，測試只使用自行產生的圖片。
+
+發布失敗與替換回復測試（隔離測試目錄、模擬建置結果，不動正式發布包）：
+
+```powershell
+powershell.exe -NoProfile -File .\tests\packaging\PublishRegression.ps1
+```
+
 Figma 介面及操作流程的 WinUI 回歸檢查（僅 Debug 建置）：
 
 ```powershell
@@ -84,6 +92,10 @@ dotnet run --project .\tools\PhotoMargin.SampleGenerator\PhotoMargin.SampleGener
 - `artifacts/PhotoMargin-win-x64.zip`
 
 發布採 x64 self-contained 資料夾，不承諾單一 EXE。解壓後執行 `PhotoMargin.App.exe`。來源照片不會被修改。
+
+發布腳本先在獨立 staging 目錄完成建置、檢查 EXE 並壓縮，成功後才替換正式輸出。上一版保留為 `PhotoMargin-win-x64.previous-<id>` 及同名 ZIP；替換失敗會嘗試回復，不先刪除上一版。
+
+2026-10-16 邏輯修復及驗證見 [Bug 修復紀錄](docs/BUGFIX-20261016.md)，修復版執行包為 `artifacts/PhotoMargin-bugfix-win-x64.zip`。
 
 本次 Figma 版另交付 `artifacts/PhotoMargin-figma-win-x64/` 及同名 ZIP，未覆寫既有發布包。執行時必須保留整個資料夾，不能只複製 EXE。
 

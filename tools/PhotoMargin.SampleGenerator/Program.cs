@@ -4,7 +4,9 @@ using PhotoMargin.Core;
 using PhotoMargin.Core.Models;
 using PhotoMargin.Imaging;
 
-var repositoryRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
+var repository = new DirectoryInfo(AppContext.BaseDirectory);
+while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "PhotoMargin.sln"))) repository = repository.Parent;
+var repositoryRoot = repository?.FullName ?? throw new DirectoryNotFoundException("Cannot find PhotoMargin.sln for sample output.");
 var inputDirectory = Path.Combine(repositoryRoot, "samples", "input");
 var outputDirectory = Path.Combine(repositoryRoot, "samples", "output");
 Directory.CreateDirectory(inputDirectory);

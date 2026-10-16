@@ -21,6 +21,24 @@ namespace PhotoMargin.App;
 // Actual WinUI integration checks, isolated preferences and fixtures; Debug only.
 public sealed partial class MainWindow
 {
+    internal async Task RunCloseSaveRegressionAsync()
+    {
+        await Initialization;
+        var store = (SettingsStore)typeof(ViewModels.MainViewModel).GetField("settingsStore", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(ViewModel)!;
+        var gate = (SemaphoreSlim)typeof(SettingsStore).GetField("writeGate", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(store)!;
+        await gate.WaitAsync();
+        try
+        {
+            ViewModel.JpegQuality = 82;
+            ViewModel.Arrangement = InformationArrangement.Stacked;
+            // Use the actual native close request while persistence is deliberately queued.
+            SendMessage(WinRT.Interop.WindowNative.GetWindowHandle(this), 0x0010, IntPtr.Zero, IntPtr.Zero);
+            await Task.Delay(200);
+            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "close-save-observation.json"), JsonSerializer.Serialize(new
+            { CloseDeferred = !closed && closing, EditingDisabled = !InteractionHost.IsEnabled, ExpectedQuality = 82, ExpectedArrangement = InformationArrangement.Stacked }));
+        }
+        finally { gate.Release(); }
+    }
     internal async Task RunArrangementRestoreRegressionAsync()
     {
         var checks = new List<object>(); Exception? failure = null;
@@ -88,7 +106,9 @@ public sealed partial class MainWindow
             OutputSizeBox.SelectedIndex = 0;
             ViewModel.JpegQuality = 93;
 
-            var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", ".."));
+            var repository = new DirectoryInfo(AppContext.BaseDirectory);
+            while (repository is not null && !File.Exists(Path.Combine(repository.FullName, "PhotoMargin.sln"))) repository = repository.Parent;
+            var root = repository?.FullName ?? throw new DirectoryNotFoundException("Cannot find the regression repository root.");
             var sample = Path.Combine(root, "samples", "input", "sample_3x2.png");
             var fixture = Path.Combine(AppContext.BaseDirectory, "figma-exif-source.jpg");
             using (var input = new MagickImage(sample))
@@ -160,7 +180,7 @@ public sealed partial class MainWindow
             await CaptureWorkspaceAsync("figma-settings-layout.png");
             await CaptureWindowAsync("figma-settings-layout-window.png");
             ViewModel.RuleEditor.New(); ViewModel.RuleEditor.Name = "QA margin rule"; ViewModel.RuleEditor.Side = 64;
-            Check(ViewModel.RuleEditor.Save(), "Save new margin rule", checks);
+            Check(await ViewModel.RuleEditor.SaveAsync(), "Save new margin rule", checks);
             var rule = ViewModel.MarginRules.First(item => item.Name == "QA margin rule");
             Check(ViewModel.SelectedMarginRuleId == MarginRule.DefaultId && ViewModel.PhotoSideMargin == 48, "Saving another rule keeps existing selection", checks);
             page.RequestBack(); await Task.Delay(100);
