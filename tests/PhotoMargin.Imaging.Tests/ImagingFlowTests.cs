@@ -79,6 +79,33 @@ public sealed class ImagingFlowTests : IDisposable
         Assert.True(ink.X + ink.Width <= layout.TextSafeBounds.Right && ink.Y + ink.Height <= layout.TextSafeBounds.Bottom);
     }
 
+    [Theory]
+    [InlineData(InformationArrangement.Auto)]
+    [InlineData(InformationArrangement.TwoColumns)]
+    [InlineData(InformationArrangement.Stacked)]
+    public async Task EveryArrangementRendersTheSameCompositionInPreviewAndExport(InformationArrangement arrangement)
+    {
+        var token = TestContext.Current.CancellationToken;
+        var source = Path.Combine(tempDirectory, "arrangement.png");
+        using (var input = new MagickImage(MagickColors.White, 1200, 800)) input.Write(source);
+        using var photo = new ImageLoader(new ExifReader()).Load(source, token);
+        var layout = new LayoutEngine(new MagickTextMeasurer()).Calculate(photo.OrientedSize,
+            new DisplayMetadata("測試相機", "測試鏡頭", "35mm", "f/4", "1/125s", "ISO 200", "2026.10.16 09:30"),
+            new LayoutSettings { Arrangement = arrangement, Visibility = new FieldVisibility { Date = true } });
+        Assert.True(layout.IsValid, string.Join("; ", layout.Errors));
+        var renderer = new ImageRenderer();
+        using var preview = new MagickImage(await renderer.RenderPreviewAsync(photo, layout, false, token));
+        using var composed = new MagickImage(renderer.RenderPng(photo, layout, token));
+        Assert.Equal(0, preview.Compare(composed, ErrorMetric.Absolute));
+        var ink = preview.BoundingBox;
+        Assert.NotNull(ink);
+        Assert.True(ink.X >= layout.TextSafeBounds.Left && ink.Y >= layout.TextSafeBounds.Top);
+        Assert.True(ink.X + ink.Width <= layout.TextSafeBounds.Right && ink.Y + ink.Height <= layout.TextSafeBounds.Bottom);
+        var destination = Path.Combine(tempDirectory, "arrangement.jpg");
+        await new ExportService(renderer).ExportJpegAsync(photo, layout, destination, 95, token);
+        Assert.Equal(renderer.RenderJpeg(photo, layout, 95, token), await File.ReadAllBytesAsync(destination, token));
+    }
+
     [Fact]
     public void CmykImageConvertsToSrgb()
     {

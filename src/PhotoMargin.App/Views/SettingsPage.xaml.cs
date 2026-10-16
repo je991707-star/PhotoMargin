@@ -9,8 +9,7 @@ public enum SettingsSection { General, Layout, Camera, Export }
 public sealed partial class SettingsPage : Page
 {
     private readonly MainViewModel viewModel;
-    private readonly Stack<SettingsSection> history = new();
-    private bool initialized, settingSelection;
+    private bool initialized, settingSelection, returningHome;
     public event EventHandler? BackRequested;
     internal SettingsSection SelectedSection { get; private set; }
 
@@ -22,9 +21,8 @@ public sealed partial class SettingsPage : Page
         NavigateTo(destination);
         Loaded += (_, _) => UpdateHeaderButtons();
     }
-    internal void NavigateTo(SettingsSection section, bool recordHistory = true)
+    internal void NavigateTo(SettingsSection section)
     {
-        if (initialized && recordHistory && section != SelectedSection) history.Push(SelectedSection);
         settingSelection = true;
         SettingsNavigation.SelectedItem = SettingsNavigation.MenuItems.OfType<NavigationViewItem>().First(item => item.Tag?.ToString() == section.ToString());
         settingSelection = false;
@@ -43,8 +41,10 @@ public sealed partial class SettingsPage : Page
     }
     internal void RequestBack()
     {
-        if (history.TryPop(out var previous)) NavigateTo(previous, false);
-        else BackRequested?.Invoke(this, EventArgs.Empty);
+        // All settings back entrances return home once, never through section history.
+        if (returningHome) return;
+        returningHome = true;
+        BackRequested?.Invoke(this, EventArgs.Empty);
     }
     private void Navigation_BackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args) => RequestBack();
     private void HeaderBack_Click(object sender, RoutedEventArgs args) => RequestBack();

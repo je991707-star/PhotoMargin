@@ -106,8 +106,10 @@ public sealed partial class MainWindow : Window
     }
     private void Settings_BackRequested(object? sender, EventArgs e)
     {
-        if (sender is SettingsPage page) page.BackRequested -= Settings_BackRequested;
+        if (sender is not SettingsPage page || !ReferenceEquals(SettingsFrame.Content, page)) return;
+        page.BackRequested -= Settings_BackRequested;
         WorkspaceGrid.Visibility = Visibility.Visible; SettingsFrame.Visibility = Visibility.Collapsed; SettingsFrame.Content = null;
+        SettingsFrame.BackStack.Clear(); SettingsFrame.ForwardStack.Clear();
         MarginRuleBox.SelectedValue = ViewModel.SelectedMarginRuleId;
         WorkspaceGrid.UpdateLayout(); (settingsOrigin ?? SettingsButton).Focus(FocusState.Programmatic);
     }

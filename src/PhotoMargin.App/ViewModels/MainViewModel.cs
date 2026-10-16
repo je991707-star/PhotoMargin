@@ -11,6 +11,8 @@ using PhotoMargin.Imaging;
 
 namespace PhotoMargin.App.ViewModels;
 
+public sealed record ArrangementChoice(InformationArrangement Value, string Name);
+
 public sealed class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ImageLoader imageLoader;
@@ -35,6 +37,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private double jpegQuality = 95, photoSideMargin = 48, photoTopMargin = 36, photoInfoGap = 24;
     private double bottomSafeDistance = 72, cropExtraPadding = 24, primaryFontSize = 28, secondaryFontSize = 22;
     private double lensFontSize = 22, dateFontSize = 22;
+    private InformationArrangement arrangement = InformationArrangement.Auto;
     private string fontFamily = "Microsoft JhengHei UI", selectedMarginRuleId = MarginRule.DefaultId;
     private bool protectFourByFive = true, protectFiveByFour = true, showGuides = true, isBusy;
     private int themeChoice;
@@ -53,6 +56,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public IReadOnlyList<double> FontSizes { get; } = Enumerable.Range(18, 83).Select(value => (double)value).ToArray();
     public IReadOnlyList<string> FontChoices { get; } =
         ["Microsoft JhengHei UI", "Microsoft JhengHei", "Segoe UI", "Arial", "Calibri", "Consolas", "Times New Roman"];
+    public IReadOnlyList<ArrangementChoice> ArrangementChoices { get; } =
+        [new(InformationArrangement.Auto, "自動（預設）"), new(InformationArrangement.TwoColumns, "左右分欄"), new(InformationArrangement.Stacked, "置中堆疊")];
     public string ApplicationIdentity { get; } = $"{Assembly.GetExecutingAssembly().GetName().Name?.Replace(".App", "")} WinUI {RuntimeInformation.ProcessArchitecture.ToString().ToLowerInvariant()} Version {Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}";
     public string Camera { get => camera; set => SetInformation(ref camera, value); }
     public string Lens { get => lens; set => SetInformation(ref lens, value); }
@@ -98,6 +103,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public double SecondaryFontSize { get => secondaryFontSize; set => SetLayout(ref secondaryFontSize, Finite(value, 22, 18, 100)); }
     public double DateFontSize { get => dateFontSize; set => SetLayout(ref dateFontSize, Finite(value, 22, 18, 100)); }
     public string FontFamily { get => fontFamily; set => SetLayout(ref fontFamily, string.IsNullOrWhiteSpace(value) ? "Microsoft JhengHei UI" : value.Trim()); }
+    public InformationArrangement Arrangement
+    {
+        get => arrangement;
+        set
+        {
+            var valid = Enum.IsDefined(value) ? value : InformationArrangement.Auto;
+            if (arrangement == valid) return;
+            SetLayout(ref arrangement, valid);
+            OnPropertyChanged(nameof(SelectedArrangement));
+        }
+    }
+    public ArrangementChoice? SelectedArrangement
+    {
+        get => ArrangementChoices.First(choice => choice.Value == Arrangement);
+        set { if (value is not null) Arrangement = value.Value; }
+    }
     public double PhotoSideMargin => photoSideMargin;
     public double PhotoTopMargin => photoTopMargin;
     public double PhotoInfoGap => photoInfoGap;
@@ -149,6 +170,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         OutputSize = layout.OutputSize; JpegQuality = layout.JpegQuality;
         PrimaryFontSize = layout.PrimaryFontSize; SecondaryFontSize = layout.SecondaryFontSize;
         LensFontSize = layout.LensFontSize; DateFontSize = layout.DateFontSize; FontFamily = layout.FontFamily;
+        Arrangement = layout.Arrangement;
         ShowGuides = persisted.ShowGuides; ThemeChoice = (int)persisted.Theme;
         foreach (var rule in persisted.MarginRules) MarginRules.Add(rule.Validate());
         if (!MarginRules.Any(rule => rule.Id == MarginRule.DefaultId)) MarginRules.Insert(0, MarginRule.FromLayout(layout));
@@ -298,6 +320,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private LayoutSettings BuildLayoutSettings() => new LayoutSettings
     {
         OutputSize = OutputSize, JpegQuality = (int)Math.Round(JpegQuality), FontFamily = FontFamily,
+        Arrangement = Arrangement,
         PhotoSideMargin = photoSideMargin, PhotoTopMargin = photoTopMargin, PhotoInfoGap = photoInfoGap,
         BottomSafeDistance = bottomSafeDistance, CropExtraPadding = cropExtraPadding,
         PrimaryFontSize = PrimaryFontSize, LensFontSize = LensFontSize, SecondaryFontSize = SecondaryFontSize, DateFontSize = DateFontSize,

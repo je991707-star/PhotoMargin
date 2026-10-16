@@ -8,6 +8,9 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using PhotoMargin.App.Services;
 using PhotoMargin.App.Views;
+using PhotoMargin.Core;
+using PhotoMargin.Core.Models;
+using PhotoMargin.Imaging;
 using Windows.Foundation;
 using Windows.Graphics.Imaging;
 using Windows.Storage;
@@ -18,6 +21,33 @@ namespace PhotoMargin.App;
 // Actual WinUI integration checks, isolated preferences and fixtures; Debug only.
 public sealed partial class MainWindow
 {
+    internal async Task RunArrangementRestoreRegressionAsync()
+    {
+        var checks = new List<object>(); Exception? failure = null;
+        try
+        {
+            await Initialization; await Task.Delay(200);
+            Check(ViewModel.Arrangement == InformationArrangement.Stacked &&
+                  ArrangementBox.SelectedItem is ViewModels.ArrangementChoice { Value: InformationArrangement.Stacked } && ArrangementBox.SelectedIndex == 2,
+                "New process restores persisted arrangement in actual native ComboBox", checks);
+            Check(ViewModel.PhotoSideMargin == 64 && ViewModel.MarginRules.Any(rule => rule.Id == ViewModel.SelectedMarginRuleId),
+                "New process preserves selected margin rule", checks);
+            Check(ViewModel.OutputSize == 1080 && ViewModel.JpegQuality == 93 && ViewModel.LensFontSize == 24 && ViewModel.DateFontSize == 20,
+                "New process preserves output settings and independent font sizes", checks);
+            Check(!ViewModel.HasPhoto && !ArrangementBox.IsEnabled && SelectPhotoButton.IsEnabled,
+                "Restart restores preferences without inventing a source photo", checks);
+            SettingsScrollViewer.ChangeView(null, 300, null, true); await Task.Delay(100);
+            await CaptureWindowAsync("arrangement-restarted.png");
+        }
+        catch (Exception exception) { failure = exception; }
+        finally
+        {
+            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "arrangement-restore-result.json"), JsonSerializer.Serialize(
+                new { Passed = failure is null, Checks = checks.Count, Dpi = GetDpiForWindow(WinRT.Interop.WindowNative.GetWindowHandle(this)), Results = checks, Error = failure?.ToString() },
+                new JsonSerializerOptions { WriteIndented = true }));
+            Close();
+        }
+    }
     internal async Task RunSettingsNavigationRegressionAsync()
     {
         var checks = new List<object>();
@@ -87,6 +117,7 @@ public sealed partial class MainWindow
             Check((double)LensFontSizeBox.SelectedItem == 24 && (double)DateFontSizeBox.SelectedItem == 20, "Independent lens/time font selectors", checks);
             await CaptureWorkspaceAsync("figma-main-photo.png");
             await CaptureWindowAsync("figma-main-window.png");
+            await VerifyArrangementAsync(checks);
 
             var state = LayoutState();
             ViewModel.Camera = "Manual camera"; ViewModel.Lens = "Manual lens";
@@ -162,12 +193,30 @@ public sealed partial class MainWindow
             await Task.Delay(400);
             await CaptureWorkspaceAsync("figma-settings-general.png");
             await CaptureWindowAsync("figma-settings-window.png");
-            page.NavigateTo(SettingsSection.Export); page.RequestBack();
-            Check(page.SelectedSection == SettingsSection.General, "Settings back returns to previous section", checks);
-            page.NavigateTo(SettingsSection.Camera); page.RequestBack();
             ((RadioButtons)page.FindName("ThemeOptions")).SelectedIndex = 2;
             Check(RootGrid.RequestedTheme == ElementTheme.Light, "Settings theme applies to common state", checks);
-            page.RequestBack(); await Task.Delay(100);
+            var homeState = LayoutState(); var homePreview = ViewModel.PreviewBytes;
+            var returnEvents = 0; page.BackRequested += (_, _) => returnEvents++;
+            page.NavigateTo(SettingsSection.Layout); page.NavigateTo(SettingsSection.General);
+            page.NavigateTo(SettingsSection.Camera); page.NavigateTo(SettingsSection.Export);
+            InvokeButton(back); await Task.Delay(100);
+            Check(WorkspaceGrid.Visibility == Visibility.Visible && SettingsFrame.Content is null && SettingsFrame.Visibility == Visibility.Collapsed,
+                "One custom back click returns home after switching all settings sections", checks);
+            Check(LayoutState().Equals(homeState) && ReferenceEquals(homePreview, ViewModel.PreviewBytes),
+                "Return home preserves arrangement/export settings and exact preview instance", checks);
+            page.RequestBack();
+            Check(returnEvents == 1 && SettingsFrame.BackStack.Count == 0 && SettingsFrame.ForwardStack.Count == 0,
+                "Duplicate back is ignored and only settings frame history is cleared", checks);
+            foreach (var section in Enum.GetValues<SettingsSection>())
+            {
+                OpenSettings(SettingsSection.General); page = (SettingsPage)SettingsFrame.Content!;
+                page.NavigateTo(SettingsSection.Export); page.NavigateTo(SettingsSection.Layout); page.NavigateTo(section);
+                await Task.Delay(150);
+                InvokeButton((Button)page.FindName("SettingsBackButton")); await Task.Delay(50);
+                Check(WorkspaceGrid.Visibility == Visibility.Visible && SettingsFrame.Content is null &&
+                      ViewModel.Camera == "Keep manual camera" && ViewModel.SourcePath == fixture && LayoutState().Equals(homeState),
+                    $"{section}: one back click returns existing work home regardless of section history", checks);
+            }
             Check(ViewModel.SourcePath == fixture && ViewModel.Camera == "Keep manual camera", "Settings theme return preserves photo/manual data", checks);
             await VerifyMainLayoutAsync(checks, "1344x892-light");
             await CaptureWorkspaceAsync("figma-main-light.png");
@@ -218,13 +267,17 @@ public sealed partial class MainWindow
                 await VerifyMainLayoutAsync(checks, $"{size.Width}x{size.Height}");
                 await CaptureWorkspaceAsync($"figma-main-{size.Width}.png");
             }
-            Settings_Click(SettingsButton, new RoutedEventArgs()); page = (SettingsPage)SettingsFrame.Content;
+            Settings_Click(SettingsButton, new RoutedEventArgs()); page = (SettingsPage)SettingsFrame.Content!;
             await Task.Delay(250);
             navigation = (NavigationView)page.FindName("SettingsNavigation");
             Check(navigation.DisplayMode != NavigationViewDisplayMode.Expanded && navigation.IsBackButtonVisible == NavigationViewBackButtonVisible.Visible,
                 "Narrow settings retain native compact navigation/back", checks);
             await CaptureWorkspaceAsync("figma-settings-compact.png");
-            page.RequestBack(); await Task.Delay(100);
+            var nativeBack = Descendants(navigation).OfType<Button>().First(button => button.Name == "NavigationViewBackButton");
+            page.NavigateTo(SettingsSection.Layout); page.NavigateTo(SettingsSection.Camera); page.NavigateTo(SettingsSection.Export);
+            InvokeButton(nativeBack); await Task.Delay(100);
+            Check(WorkspaceGrid.Visibility == Visibility.Visible && SettingsFrame.Content is null && ViewModel.HasPhoto,
+                "Native compact NavigationView back also returns directly home", checks);
             SettingsScrollViewer.ChangeView(null, SettingsScrollViewer.ScrollableHeight, null, true); await Task.Delay(100);
             Check(PhotoTimePicker.TransformToVisual(SettingsScrollViewer).TransformPoint(new Point()).Y < SettingsScrollViewer.ActualHeight, "Photo date/time reachable by vertical scrolling", checks);
             await CaptureWorkspaceAsync("figma-main-metadata-small.png");
@@ -244,6 +297,11 @@ public sealed partial class MainWindow
             await ViewModel.FlushSettingsAsync();
             var restored = await new SettingsStore(Path.Combine(AppContext.BaseDirectory, "ui-figma-regression-settings.json")).LoadAsync();
             Check(restored.MarginRules.Any(item => item.Id == rule.Id) && restored.SelectedMarginRuleId == rule.Id && restored.Layout.LensFontSize == 24, "Rules, independent fonts and selection persisted", checks);
+            Check(restored.Layout.Arrangement == InformationArrangement.Stacked, "Selected arrangement is persisted with existing preferences", checks);
+            using var restarted = CreateRegressionViewModel(Path.Combine(AppContext.BaseDirectory, "ui-figma-regression-settings.json"));
+            await restarted.InitializeAsync();
+            Check(restarted.Arrangement == InformationArrangement.Stacked && restarted.SelectedMarginRuleId == rule.Id && restarted.JpegQuality == ViewModel.JpegQuality,
+                "Fresh application ViewModel restores arrangement and other preferences", checks);
             var migrationPath = Path.Combine(AppContext.BaseDirectory, "ui-v2-migration-settings.json");
             await File.WriteAllTextAsync(migrationPath, """{"version":2,"layout":{"photoSideMargin":61,"primaryFontSize":30},"theme":2}""");
             using var migrated = new PhotoMargin.App.ViewModels.MainViewModel(new PhotoMargin.Imaging.ImageLoader(new PhotoMargin.Imaging.ExifReader()),
@@ -252,6 +310,12 @@ public sealed partial class MainWindow
             await migrated.InitializeAsync();
             Check(migrated.PhotoSideMargin == 61 && migrated.PrimaryFontSize == 30 && migrated.ThemeChoice == 2 && migrated.MarginRules.Count == 1,
                 "Version 2 settings migrate existing margins into a rule", checks);
+            Check(migrated.Arrangement == InformationArrangement.Auto, "Old version 2 without arrangement uses legacy auto", checks);
+            var version3Path = Path.Combine(AppContext.BaseDirectory, "ui-v3-arrangement-migration.json");
+            await File.WriteAllTextAsync(version3Path, """{"version":3,"layout":{"outputSize":1536,"jpegQuality":87},"theme":1}""");
+            using var legacy3 = CreateRegressionViewModel(version3Path); await legacy3.InitializeAsync();
+            Check(legacy3.Arrangement == InformationArrangement.Auto && legacy3.OutputSize == 1536 && legacy3.JpegQuality == 87,
+                "Old version 3 without arrangement preserves preferences and selects legacy auto", checks);
         }
         catch (Exception exception) { failure = exception; await CaptureWorkspaceAsync("figma-failure.png"); }
         finally
@@ -265,7 +329,64 @@ public sealed partial class MainWindow
     private object LayoutState() => (ViewModel.SelectedMarginRuleId, ViewModel.PhotoSideMargin, ViewModel.PhotoTopMargin,
         ViewModel.PhotoInfoGap, ViewModel.BottomSafeDistance, ViewModel.CropExtraPadding, ViewModel.FontFamily,
         ViewModel.PrimaryFontSize, ViewModel.LensFontSize, ViewModel.SecondaryFontSize, ViewModel.DateFontSize,
-        ViewModel.OutputSize, ViewModel.JpegQuality, ViewModel.ShowGuides);
+        ViewModel.OutputSize, ViewModel.JpegQuality, ViewModel.ShowGuides, ViewModel.Arrangement);
+    private static ViewModels.MainViewModel CreateRegressionViewModel(string settingsPath)
+    {
+        var renderer = new ImageRenderer();
+        return new(new ImageLoader(new ExifReader()), new LayoutEngine(new MagickTextMeasurer()),
+            new PreviewService(renderer), new ExportService(renderer), new SettingsStore(settingsPath));
+    }
+    private async Task VerifyArrangementAsync(List<object> checks)
+    {
+        RootGrid.UpdateLayout();
+        var arrangementBounds = ElementBounds(ArrangementBox); var fontBounds = ElementBounds(FontFamilyBox);
+        Check(SidebarContent.Children.IndexOf(ArrangementBox) + 1 == SidebarContent.Children.IndexOf(FontFamilyBox) &&
+              Math.Abs(arrangementBounds.Left - fontBounds.Left) < 1 && Math.Abs(arrangementBounds.Width - fontBounds.Width) < 1 &&
+              Math.Abs(arrangementBounds.Height - fontBounds.Height) < 1 && arrangementBounds.Bottom < fontBounds.Top,
+            "Arrangement sits immediately above font selector with identical native dimensions", checks);
+        Check(ViewModel.Arrangement == InformationArrangement.Auto && ArrangementBox.SelectedItem is ViewModels.ArrangementChoice { Value: InformationArrangement.Auto } && ArrangementBox.Items.Count == 3,
+            "Default native arrangement selector exposes only supported modes", checks);
+        var guides = ViewModel.ShowGuides; ViewModel.ShowGuides = false;
+        using var source = new ImageLoader(new ExifReader()).Load(ViewModel.SourcePath!);
+        var renderer = new ImageRenderer(); var engine = new LayoutEngine(new MagickTextMeasurer());
+        byte[]? columnsJpeg = null;
+        foreach (var choice in ViewModel.ArrangementChoices)
+        {
+            ArrangementBox.SelectedItem = choice;
+            await WaitForPreviewAsync();
+            Check(ViewModel.Arrangement == choice.Value, $"{choice.Name}: native selector updates actual setting", checks);
+            var metadata = new DisplayMetadata(ViewModel.Camera, ViewModel.Lens, ViewModel.FocalLength, ViewModel.Aperture, ViewModel.Shutter, ViewModel.Iso,
+                ViewModel.SelectedDate!.Value.ToString("yyyy.MM.dd", System.Globalization.CultureInfo.InvariantCulture) +
+                $" {ViewModel.SelectedTime!.Value.Hours:00}:{ViewModel.SelectedTime.Value.Minutes:00}");
+            var layout = engine.Calculate(source.OrientedSize, metadata, new LayoutSettings
+            {
+                Arrangement = choice.Value, OutputSize = ViewModel.OutputSize, JpegQuality = (int)ViewModel.JpegQuality,
+                PrimaryFontSize = ViewModel.PrimaryFontSize, LensFontSize = ViewModel.LensFontSize,
+                SecondaryFontSize = ViewModel.SecondaryFontSize, DateFontSize = ViewModel.DateFontSize, FontFamily = ViewModel.FontFamily,
+                PhotoSideMargin = ViewModel.PhotoSideMargin, PhotoTopMargin = ViewModel.PhotoTopMargin, PhotoInfoGap = ViewModel.PhotoInfoGap,
+                BottomSafeDistance = ViewModel.BottomSafeDistance, CropExtraPadding = ViewModel.CropExtraPadding,
+                ProtectFourByFive = ViewModel.ProtectFourByFive, ProtectFiveByFour = ViewModel.ProtectFiveByFour,
+                Visibility = new FieldVisibility { Camera = true, Lens = true, Exposure = true, Date = true }
+            });
+            Check(layout.IsValid && layout.UsesStackedInfo == (choice.Value == InformationArrangement.Stacked),
+                $"{choice.Name}: actual supported layout remains safe", checks);
+            using (var preview = new MagickImage(ViewModel.PreviewBytes!))
+            using (var expected = new MagickImage(renderer.RenderPng(source, layout)))
+                Check(preview.Compare(expected, ErrorMetric.Absolute) == 0, $"{choice.Name}: live preview matches selected core layout pixel-for-pixel", checks);
+            var export = Path.Combine(AppContext.BaseDirectory, $"arrangement-{choice.Value}.jpg");
+            await ViewModel.ExportAsync(export);
+            var jpeg = await File.ReadAllBytesAsync(export);
+            Check(jpeg.SequenceEqual(renderer.RenderJpeg(source, layout, (int)ViewModel.JpegQuality)),
+                $"{choice.Name}: real export uses same selected layout as preview", checks);
+            if (choice.Value == InformationArrangement.TwoColumns) columnsJpeg = jpeg;
+            if (choice.Value == InformationArrangement.Stacked)
+                Check(columnsJpeg is not null && !columnsJpeg.SequenceEqual(jpeg), "Switching arrangement changes actual rendered JPG", checks);
+            SettingsScrollViewer.ChangeView(null, 300, null, true); await Task.Delay(150);
+            await CaptureWindowAsync($"arrangement-{choice.Value}.png");
+        }
+        ViewModel.ShowGuides = guides; await WaitForPreviewAsync();
+        SettingsScrollViewer.ChangeView(null, 0, null, true); await Task.Delay(50);
+    }
     private async Task WaitForPreviewAsync()
     {
         for (var attempt = 0; attempt < 200; attempt++)
@@ -287,7 +408,7 @@ public sealed partial class MainWindow
         Check(Math.Abs(canvas.Width - canvas.Height) < 1, $"{state}: square preview", checks);
         Check(SettingsScrollViewer.ComputedHorizontalScrollBarVisibility == Visibility.Collapsed && SettingsScrollViewer.ScrollableHeight > 0, $"{state}: vertical-only scrolling", checks);
         var left = ElementBounds(scrollbar).Left;
-        foreach (var control in new FrameworkElement[] { MarginRuleBox, AddRuleButton, BrandImageBox, FontFamilyBox, CameraTextBox, LensTextBox, JpegQualitySlider, IsoBox })
+        foreach (var control in new FrameworkElement[] { MarginRuleBox, AddRuleButton, BrandImageBox, ArrangementBox, FontFamilyBox, CameraTextBox, LensTextBox, JpegQualitySlider, IsoBox })
             Check(ElementBounds(control).Right <= left - 1, $"{state}: {control.Name} clears expanded scrollbar", checks);
         var minute = Descendants(PhotoTimePicker).OfType<TextBlock>().Single(element => element.Name == "MinuteTextBlock");
         var minuteHost = Descendants(PhotoTimePicker).OfType<Border>().Single(element => element.Name == "SecondPickerHost");

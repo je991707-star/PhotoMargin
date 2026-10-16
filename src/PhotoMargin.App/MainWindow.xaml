@@ -119,6 +119,8 @@
                                             AutomationProperties.Name="品牌圖預覽，功能未開放" />
                                 </StackPanel>
                             </Grid>
+                            <ComboBox x:Name="ArrangementBox" Header="排列設定" HorizontalAlignment="Stretch" DisplayMemberPath="Name"
+                                      ItemsSource="{Binding ArrangementChoices}" SelectedItem="{Binding SelectedArrangement, Mode=TwoWay}" />
                             <ComboBox x:Name="FontFamilyBox" Header="字體設定" IsEditable="True" HorizontalAlignment="Stretch" ItemsSource="{Binding FontChoices}"
                                       SelectedItem="{Binding FontFamily, Mode=TwoWay}" />
                             <Rectangle Height="1" Fill="{ThemeResource SectionDividerBrush}" Margin="0,2" />

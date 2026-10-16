@@ -17,6 +17,17 @@ public partial class App : Application
         try
         {
 #if DEBUG
+            if (Environment.GetCommandLineArgs().Contains("--verify-arrangement-restore"))
+            {
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-figma-regression-settings.json");
+                if (!File.Exists(testSettings)) throw new InvalidOperationException("請先執行 --verify-settings 建立獨立的測試偏好。");
+                var testResult = Path.Combine(AppContext.BaseDirectory, "arrangement-restore-result.json");
+                if (File.Exists(testResult)) File.Delete(testResult);
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings));
+                window = testWindow; window.Activate();
+                _ = testWindow.RunArrangementRestoreRegressionAsync();
+                return;
+            }
             if (Environment.GetCommandLineArgs().Contains("--verify-settings"))
             {
                 var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-figma-regression-settings.json");

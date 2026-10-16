@@ -33,6 +33,12 @@ public sealed class LayoutEngine(ITextMeasurer textMeasurer)
             : canvasSize - topMargin * 2;
 
         var errors = new List<string>();
+        if (!content.Fits)
+        {
+            errors.Add(settings.Arrangement == InformationArrangement.TwoColumns
+                ? "左右分欄無法容納目前的資訊，請改用自動或置中堆疊排列，或調整文字設定。"
+                : "目前的資訊無法安全容納，請調整文字或版面設定。");
+        }
         if (photoAvailableWidth <= 0 || photoAvailableHeight <= 0)
         {
             errors.Add("目前的邊距與文字設定沒有足夠空間放置照片。");
@@ -106,23 +112,24 @@ public sealed class LayoutEngine(ITextMeasurer textMeasurer)
             return InformationLayout.Empty;
         }
 
-        var gutter = 48 * scale;
-        var columnWidth = (safe.Width - gutter) / 2d;
-        var leftMeasured = MeasureColumn(left, font, columnWidth, TextAlignment.Left, safe.Left);
-        var rightMeasured = MeasureColumn(right, font, columnWidth, TextAlignment.Right, safe.Right - columnWidth);
-
-        if (leftMeasured.Fits && rightMeasured.Fits)
+        if (settings.Arrangement != InformationArrangement.Stacked)
         {
-            var height = Math.Max(leftMeasured.Height, rightMeasured.Height);
-            var runs = leftMeasured.Runs.Concat(rightMeasured.Runs).ToArray();
-            return new InformationLayout(runs, height, false);
+            var gutter = 48 * scale;
+            var columnWidth = (safe.Width - gutter) / 2d;
+            var leftMeasured = MeasureColumn(left, font, columnWidth, TextAlignment.Left, safe.Left);
+            var rightMeasured = MeasureColumn(right, font, columnWidth, TextAlignment.Right, safe.Right - columnWidth);
+            var fits = leftMeasured.Fits && rightMeasured.Fits;
+            if (fits || settings.Arrangement == InformationArrangement.TwoColumns)
+            {
+                var height = Math.Max(leftMeasured.Height, rightMeasured.Height);
+                var runs = leftMeasured.Runs.Concat(rightMeasured.Runs).ToArray();
+                return new InformationLayout(runs, height, false, fits);
+            }
         }
 
         var all = left.Concat(right).ToList();
         var stacked = MeasureColumn(all, font, safe.Width, TextAlignment.Center, safe.Left, allowWrap: true);
-        return stacked.Fits
-            ? new InformationLayout(stacked.Runs, stacked.Height, true)
-            : new InformationLayout(stacked.Runs, stacked.Height, true);
+        return new InformationLayout(stacked.Runs, stacked.Height, true, stacked.Fits);
     }
 
     private ColumnLayout MeasureColumn(
@@ -220,7 +227,7 @@ public sealed class LayoutEngine(ITextMeasurer textMeasurer)
         new(canvasSize, default, safe, [], false, errors);
 
     private sealed record ColumnLayout(IReadOnlyList<TextRunLayout> Runs, double Height, bool Fits);
-    private sealed record InformationLayout(IReadOnlyList<TextRunLayout> Runs, double Height, bool Stacked)
+    private sealed record InformationLayout(IReadOnlyList<TextRunLayout> Runs, double Height, bool Stacked, bool Fits = true)
     {
         public static InformationLayout Empty { get; } = new([], 0, false);
     }

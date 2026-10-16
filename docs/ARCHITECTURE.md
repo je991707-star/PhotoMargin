@@ -10,7 +10,9 @@ PhotoMargin.App      WinUI 3、MVVM、對話框、背景工作、設定與預覽
 
 預覽與匯出都使用 `LayoutEngine` 產生的 `LayoutResult`，固定顯示完整正方形畫布。安全線由預覽渲染路徑額外繪製，正式 JPG 不會包含輔助線。CalendarDatePicker／TimePicker 綁定可空的 SelectedDate／SelectedTime；優先帶入 EXIF，缺少拍攝日期時使用來源檔案建立時間並標明來源。成品使用 yyyy.MM.dd HH:mm；原始秒數仍保留於來源中繼資料。
 
-主畫面與設定頁共用同一個 MainViewModel。SettingsPage 明確接收目的區塊，NavigationView 的選取狀態與內容同步；設定內返回有自己的歷程，從主畫面直接進入則返回保留中的工作頁。邊距規則由 MarginRule／RuleEditorViewModel 管理；編輯草稿不會立即改變作品，儲存後才更新規則集合。設定 JSON 版本 3 接受版本 2，將原有邊距轉成預設規則。
+主畫面與設定頁共用同一個 MainViewModel。SettingsPage 明確接收目的區塊，NavigationView 的選取狀態與內容同步；設定不保存子頁返回歷程，自訂返回、原生 NavigationView 返回與 Alt+Left 統一一次返回既有工作頁，重複返回只處理一次。退出只清理 SettingsFrame 的紀錄，不影響其他導覽。邊距規則由 MarginRule／RuleEditorViewModel 管理；編輯草稿不會立即改變作品，儲存後才更新規則集合。設定 JSON 版本 3 接受版本 2，將原有邊距轉成預設規則。
+
+LayoutSettings.Arrangement 對應既有的分欄與堆疊算法：Auto 保留先分欄、容不下時堆疊的自適應行為；TwoColumns 明確分欄，無法容納時回報驗證錯誤；Stacked 直接使用原有置中堆疊／換行。三者共用 contain、文字量測、安全驗證及渲染。排列透過既有 Layout 偏好保存；舊設定缺值或未知數值時回到 Auto，不重設其他偏好。
 
 Reload 在確認後以背景工作重新讀取 EXIF，不重載圖片或重設輸出設定。成功才提交資訊；來源版本、資訊編輯版本及生命週期檢查阻止過期結果回寫。
 

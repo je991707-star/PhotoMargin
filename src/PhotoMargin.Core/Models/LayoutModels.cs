@@ -14,6 +14,14 @@ public enum TextAlignment
     Right
 }
 
+// Select between the existing information layouts, not photo orientation or text alignment.
+public enum InformationArrangement
+{
+    Auto = 0,
+    TwoColumns = 1,
+    Stacked = 2
+}
+
 public sealed record FieldVisibility
 {
     public bool Camera { get; init; } = true;
@@ -39,12 +47,14 @@ public sealed record LayoutSettings
     public bool ProtectFourByFive { get; init; } = true;
     public bool ProtectFiveByFour { get; init; } = true;
     public string FontFamily { get; init; } = "Microsoft JhengHei UI";
+    public InformationArrangement Arrangement { get; init; } = InformationArrangement.Auto;
     public FieldVisibility Visibility { get; init; } = new();
 
     public double Scale => OutputSize / 1080d;
 
     public LayoutSettings Validate() => this with
     {
+        Arrangement = Enum.IsDefined(Arrangement) ? Arrangement : InformationArrangement.Auto,
         OutputSize = Math.Clamp(OutputSize, 320, 8192),
         JpegQuality = Math.Clamp(JpegQuality, 50, 100),
         PhotoSideMargin = Math.Clamp(PhotoSideMargin, 0, 400),

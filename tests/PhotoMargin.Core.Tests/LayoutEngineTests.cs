@@ -80,6 +80,60 @@ public sealed class LayoutEngineTests
         Assert.Contains(layout.TextRuns, run => run.Text == "2023.11.08 16:15" && run.FontSize == 24);
     }
 
+    [Theory]
+    [InlineData(InformationArrangement.Auto)]
+    [InlineData(InformationArrangement.TwoColumns)]
+    [InlineData(InformationArrangement.Stacked)]
+    public void SupportedArrangementsPreserveContainAndSafety(InformationArrangement arrangement)
+    {
+        foreach (var (width, height) in new[] { (3d, 2d), (4d, 3d), (16d, 9d), (2d, 1d) })
+        foreach (var size in new[] { 1080, 2048 })
+        {
+            var layout = engine.Calculate(new SizeD(width * 1000, height * 1000), CompleteMetadata(),
+                new LayoutSettings { Arrangement = arrangement, OutputSize = size, Visibility = new FieldVisibility { Date = true } });
+            Assert.True(layout.IsValid, string.Join("; ", layout.Errors));
+            Assert.Equal(arrangement == InformationArrangement.Stacked, layout.UsesStackedInfo);
+            Assert.Equal(width / height, layout.PhotoBounds.Width / layout.PhotoBounds.Height, 6);
+            Assert.Empty(LayoutValidator.Validate(layout));
+            Assert.All(layout.TextRuns, run => Assert.True(layout.TextSafeBounds.Contains(run.Bounds)));
+        }
+    }
+
+    [Fact]
+    public void ForcedStackUsesExistingCenteredStackEvenWhenColumnsFit()
+    {
+        var columns = engine.Calculate(new SizeD(1800, 1200), CompleteMetadata(), new LayoutSettings());
+        var stack = engine.Calculate(new SizeD(1800, 1200), CompleteMetadata(),
+            new LayoutSettings { Arrangement = InformationArrangement.Stacked });
+        Assert.False(columns.UsesStackedInfo);
+        Assert.True(stack.UsesStackedInfo);
+        Assert.NotEqual(columns.PhotoBounds, stack.PhotoBounds);
+        Assert.All(stack.TextRuns, run => Assert.Equal(540, (run.Bounds.Left + run.Bounds.Right) / 2, 6));
+    }
+
+    [Fact]
+    public void AutoRetainsFallbackButExplicitColumnsRejectUnfitInformation()
+    {
+        var metadata = CompleteMetadata() with { Lens = new string('長', 80) };
+        var auto = engine.Calculate(new SizeD(1800, 1200), metadata, new LayoutSettings());
+        var columns = engine.Calculate(new SizeD(1800, 1200), metadata,
+            new LayoutSettings { Arrangement = InformationArrangement.TwoColumns });
+        Assert.True(auto.IsValid, string.Join("; ", auto.Errors));
+        Assert.True(auto.UsesStackedInfo);
+        Assert.False(columns.IsValid);
+        Assert.False(columns.UsesStackedInfo);
+        Assert.Contains(columns.Errors, message => message.Contains("左右分欄", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MissingOrUnknownArrangementUsesLegacyAuto()
+    {
+        var old = System.Text.Json.JsonSerializer.Deserialize<LayoutSettings>("{\"OutputSize\":2048}")!;
+        Assert.Equal(InformationArrangement.Auto, old.Arrangement);
+        Assert.Equal(2048, old.OutputSize);
+        Assert.Equal(InformationArrangement.Auto, new LayoutSettings { Arrangement = (InformationArrangement)99 }.Validate().Arrangement);
+    }
+
     private static DisplayMetadata CompleteMetadata() =>
         new("Panasonic DC-GH5", "LEICA DG 12-60/F2.8-4.0", "25mm", "f/5.6", "1/250s", "ISO 200", "2026.10.13");
 
