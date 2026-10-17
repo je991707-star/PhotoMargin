@@ -108,7 +108,7 @@
                                     <ComboBox x:Name="CameraFontSizeBox" Header="機身字級" IsEditable="True" HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding FontSizes}" SelectedItem="{Binding PrimaryFontSize, Mode=TwoWay}" />
                                     <ComboBox x:Name="LensFontSizeBox" Grid.Column="1" Header="鏡頭字級" IsEditable="True" HorizontalAlignment="Stretch"
-                                              ItemsSource="{Binding FontSizes}" SelectedItem="{Binding LensFontSize, Mode=TwoWay}" />
+                                              ItemsSource="{Binding LensFontSizes}" SelectedItem="{Binding LensFontSize, Mode=TwoWay}" TextSubmitted="LensFontSize_TextSubmitted" />
                                     <ComboBox x:Name="InfoFontSizeBox" Grid.Row="1" Header="資訊字級" IsEditable="True" HorizontalAlignment="Stretch"
                                               ItemsSource="{Binding FontSizes}" SelectedItem="{Binding SecondaryFontSize, Mode=TwoWay}" />
                                     <ComboBox x:Name="DateFontSizeBox" Grid.Row="1" Grid.Column="1" Header="時間字級" IsEditable="True" HorizontalAlignment="Stretch"

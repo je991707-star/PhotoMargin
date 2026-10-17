@@ -147,7 +147,7 @@ public sealed partial class StateAndPersistenceTests
         await store.SaveAsync(settings with { MarginRules = [changed] });
         var restored = (await store.LoadAsync()).MarginRules[0];
         Assert.Equal(151, restored.ForAspect(SourceAspect.SixteenByNine).Side); Assert.Equal(69, restored.ForAspect(SourceAspect.FourByThree).Side);
-        using var json = JsonDocument.Parse(File.ReadAllText(path)); Assert.Equal(5, json.RootElement.GetProperty("version").GetInt32());
+        using var json = JsonDocument.Parse(File.ReadAllText(path)); Assert.Equal(PersistedSettings.CurrentVersion, json.RootElement.GetProperty("version").GetInt32());
     });
 
     [Fact]

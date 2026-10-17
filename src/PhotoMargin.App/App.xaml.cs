@@ -17,6 +17,60 @@ public partial class App : Application
         try
         {
 #if DEBUG
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-builtin-update" or "--verify-builtin-update-restore"))
+            {
+                var restore = Environment.GetCommandLineArgs().Contains("--verify-builtin-update-restore");
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-built-in-update-settings.json");
+                var store = new Services.SettingsStore(testSettings);
+                if (!restore)
+                {
+                    var old = new Services.MarginRule { Top = 100, Gap = 50, Bottom = 50, BuiltInRevision = 1 }.Validate();
+                    Task.Run(() => store.SaveAsync(new Services.PersistedSettings { MarginRules = [old],
+                        Layout = old.ForAspect(Core.SourceAspect.FourByThree).ApplyTo(new() { LensFontSize = 18,
+                            Arrangement = Core.Models.InformationArrangement.TwoColumns }) })).GetAwaiter().GetResult();
+                }
+                if (restore && !File.Exists(testSettings)) throw new InvalidOperationException("請先執行 --verify-builtin-update。");
+                var testWindow = new MainWindow(store); window = testWindow; window.Activate();
+                _ = testWindow.RunBuiltInCatalogUpdateRegressionAsync(restore); return;
+            }
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-builtin-lens" or "--verify-builtin-lens-restore"))
+            {
+                var restore = Environment.GetCommandLineArgs().Contains("--verify-builtin-lens-restore");
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-built-in-lens-settings.json");
+                if (!restore && File.Exists(testSettings)) File.Delete(testSettings);
+                if (restore && !File.Exists(testSettings)) throw new InvalidOperationException("請先執行 --verify-builtin-lens。");
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings)); window = testWindow; window.Activate();
+                _ = testWindow.RunBuiltInLensRegressionAsync(restore); return;
+            }
+            if (Environment.GetCommandLineArgs().Contains("--verify-bottom-margins"))
+            {
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-bottom-margin-settings.json");
+                if (File.Exists(testSettings)) File.Delete(testSettings);
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings));
+                window = testWindow; window.Activate(); _ = testWindow.RunBottomMarginRegressionAsync(); return;
+            }
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-settings-recovery" or "--verify-settings-readonly"))
+            {
+                var skipRetry = Environment.GetCommandLineArgs().Contains("--verify-settings-readonly");
+                var testSettings = Path.Combine(AppContext.BaseDirectory, skipRetry ? "ui-settings-readonly.json" : "ui-settings-recovery.json");
+                var store = new Services.SettingsStore(testSettings);
+                Task.Run(() => store.SaveAsync(new Services.PersistedSettings
+                {
+                    MarginRules = [new() { Id = "recovery-a", Name = "Recovery A", Side = 61 }, new() { Id = "recovery-b", Name = "Recovery B", Side = 75 }],
+                    SelectedMarginRuleId = "recovery-b", Layout = new() { PhotoSideMargin = 91 }
+                })).GetAwaiter().GetResult();
+                var original = File.ReadAllBytes(testSettings);
+                var heldLock = new FileStream(testSettings, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                var testWindow = new MainWindow(store); window = testWindow; window.Activate();
+                _ = testWindow.RunSettingsRecoveryAsync(heldLock, testSettings, original, skipRetry); return;
+            }
+            if (Environment.GetCommandLineArgs().Contains("--verify-column-fallback"))
+            {
+                var testSettings = Path.Combine(AppContext.BaseDirectory, "ui-column-fallback-settings.json");
+                if (File.Exists(testSettings)) File.Delete(testSettings);
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings));
+                window = testWindow; window.Activate(); _ = testWindow.RunColumnFallbackAsync(); return;
+            }
             if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-aspects" or "--verify-aspects-restore"))
             {
                 var restore = Environment.GetCommandLineArgs().Contains("--verify-aspects-restore");

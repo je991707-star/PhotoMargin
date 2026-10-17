@@ -16,6 +16,7 @@
     <Compile Include="../../src/PhotoMargin.App/Services/SettingsStore.cs" Link="Production/SettingsStore.cs" />
     <Compile Include="../../src/PhotoMargin.App/Services/PreviewService.cs" Link="Production/PreviewService.cs" />
     <Compile Include="../../src/PhotoMargin.App/Services/MarginRule.cs" Link="Production/MarginRule.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/BuiltInMarginPresets.cs" Link="Production/BuiltInMarginPresets.cs" />
     <Compile Include="../../src/PhotoMargin.App/Services/RatioConfigurations.cs" Link="Production/RatioConfigurations.cs" />
     <Using Include="Xunit" />
   </ItemGroup>

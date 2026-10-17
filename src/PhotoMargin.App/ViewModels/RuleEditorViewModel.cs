@@ -25,12 +25,14 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     private string? selectedRuleId;
     private string name = "", message = "";
     private double side = 48, top = 36, gap = 24, bottom = 72, extra = 24;
-    private bool protectPortrait = true, protectLandscape = true;
+    private double exposureItemGap = 18;
+    private bool protectPortrait = true, protectLandscape;
     private bool loading, isSaving, isTransitioning;
     private PresetMode mode;
     private MarginRule? original;
     private MarginRule draft = new MarginRule().Validate();
     private SourceAspect aspect = SourceAspect.FourByThree;
+    private InformationArrangement arrangement = InformationArrangement.TwoColumns;
     private byte[]? previewBytes;
     private string previewError = "";
     private long previewVersion;
@@ -40,6 +42,18 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     private Task previewTask = Task.CompletedTask;
     private object? previewOwner;
     public IReadOnlyList<string> AspectChoices { get; } = ["16:9", "5:4", "4:3", "3:2"];
+    public IReadOnlyList<string> ArrangementChoices { get; } = ["左右排列", "垂直排列"];
+    public int ArrangementIndex
+    {
+        get => arrangement == InformationArrangement.Stacked ? 1 : 0;
+        set
+        {
+            if (!CanEdit || value is not (0 or 1) || value == ArrangementIndex) return;
+            arrangement = value == 1 ? InformationArrangement.Stacked : InformationArrangement.TwoColumns;
+            draftEpoch++; owner.SetDemonstrationArrangement(arrangement);
+            OnPropertyChanged(); LoadActiveConfiguration(); RequestPreview();
+        }
+    }
     public int AspectIndex
     {
         get => (int)aspect;
@@ -61,6 +75,7 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     public string BottomText => Pixels(Bottom);
     public string GapText => Pixels(Gap);
     public string ExtraText => Pixels(Extra);
+    public string ExposureItemGapText => Pixels(ExposureItemGap);
     private static string Pixels(double value) => value.ToString("0", CultureInfo.CurrentCulture) + " px";
     private PresetDeletionRequest? deletion;
     private string? savingId;
@@ -73,6 +88,7 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     public double Side { get => side; set => SetValue(ref side, value); }
     public double Top { get => top; set => SetValue(ref top, value); }
     public double Gap { get => gap; set => SetValue(ref gap, value); }
+    public double ExposureItemGap { get => exposureItemGap; set => SetValue(ref exposureItemGap, value); }
     public double Bottom { get => bottom; set => SetValue(ref bottom, value); }
     public double Extra { get => extra; set => SetValue(ref extra, value); }
     public bool ProtectPortrait { get => protectPortrait; set => SetValue(ref protectPortrait, value); }
@@ -81,14 +97,14 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     public bool IsSaving { get => isSaving; private set { if (SetProperty(ref isSaving, value)) NotifyState(); } }
     public bool CanEdit => !IsSaving && !isTransitioning && deletion is null;
     public bool CanAdjustValues => CanEdit && (!IsEditMode || SelectedPreset is not null);
-    public bool CanSave => CanAdjustValues && !string.IsNullOrWhiteSpace(Name) &&
+    public bool CanSave => !owner.IsSettingsReadOnly && CanAdjustValues && !string.IsNullOrWhiteSpace(Name) &&
         !owner.MarginRules.Any(rule => (!IsEditMode || rule.Id != selectedRuleId) && string.Equals(rule.Name, Name.Trim(), StringComparison.OrdinalIgnoreCase));
-    public bool CanDelete => CanEdit && IsEditMode && SelectedPreset is { Id: not MarginRule.DefaultId };
+    public bool CanDelete => !owner.IsSettingsReadOnly && CanEdit && IsEditMode && SelectedPreset is { Id: not MarginRule.DefaultId };
     public bool HasDirtyChanges => IsEditMode && original is not null && Snapshot != original;
     private MarginRule? SelectedPreset => owner.MarginRules.FirstOrDefault(rule => rule.Id == selectedRuleId);
     private MarginRule Snapshot => draft with { Id = selectedRuleId ?? "", Name = Name };
     private MarginRule WorkDraft() => (SelectedPreset ?? owner.WorkingMargins).Validate()
-        .WithConfiguration(owner.WorkAspect, MarginConfiguration.From(owner.WorkingMargins))
+        .WithConfiguration(owner.WorkAspect, owner.Arrangement, MarginConfiguration.From(owner.WorkingMargins))
         with { Id = selectedRuleId ?? "", Name = SelectedPreset?.Name ?? "" };
 
     internal void Begin(string? id)
@@ -96,8 +112,8 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
         if (!CanEdit) return;
         mode = PresetMode.Apply;
         selectedRuleId = owner.MarginRules.Any(rule => rule.Id == id) ? id : null;
-        original = null; aspect = owner.DemonstrationAspect;
-        OnPropertyChanged(nameof(AspectIndex));
+        original = null; aspect = owner.DemonstrationAspect; arrangement = owner.DemonstrationArrangement;
+        OnPropertyChanged(nameof(AspectIndex)); OnPropertyChanged(nameof(ArrangementIndex));
         LoadValues(WorkDraft());
     }
     private void LoadValues(MarginRule values)
@@ -107,28 +123,29 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     }
     private void LoadActiveConfiguration()
     {
-        var values = draft.ForAspect(aspect);
+        var values = draft.ForAspect(aspect, arrangement);
         loading = true;
-        side = values.Side; top = values.Top; gap = values.Gap; bottom = values.Bottom; extra = values.Extra;
+        side = values.Side; top = values.Top; gap = values.Gap; exposureItemGap = values.ExposureItemGap; bottom = values.Bottom; extra = values.Extra;
         protectPortrait = values.ProtectPortrait; protectLandscape = values.ProtectLandscape;
-        foreach (var property in new[] { nameof(Name), nameof(Side), nameof(Top), nameof(Gap), nameof(Bottom), nameof(Extra), nameof(ProtectPortrait), nameof(ProtectLandscape) }) OnPropertyChanged(property);
+        foreach (var property in new[] { nameof(Name), nameof(Side), nameof(Top), nameof(Gap), nameof(ExposureItemGap), nameof(Bottom), nameof(Extra), nameof(ProtectPortrait), nameof(ProtectLandscape) }) OnPropertyChanged(property);
         loading = false; NotifyNumbers(); NotifyState();
     }
     private void NotifyState()
     {
         foreach (var property in new[] { nameof(SelectedRuleId), nameof(Mode), nameof(ModeIndex), nameof(IsEditMode), nameof(CanEdit), nameof(CanAdjustValues), nameof(CanSave), nameof(CanDelete), nameof(HasDirtyChanges) }) OnPropertyChanged(property);
     }
+    internal void RefreshSettingsAccess() => NotifyState();
     private void SetValue<T>(ref T field, T value, [CallerMemberName] string? property = null)
     {
         if (loading || !CanAdjustValues || !SetProperty(ref field, value, property)) return;
-        var configuration = new MarginConfiguration { Side = Side, Top = Top, Gap = Gap, Bottom = Bottom,
+        var configuration = new MarginConfiguration { Side = Side, Top = Top, Gap = Gap, ExposureItemGap = ExposureItemGap, Bottom = Bottom,
             Extra = Extra, ProtectPortrait = ProtectPortrait, ProtectLandscape = ProtectLandscape };
-        draft = draft.WithConfiguration(aspect, configuration);
-        if (!IsEditMode) owner.ApplyWorkingMargins(configuration.ToRule());
+        draft = draft.WithConfiguration(aspect, arrangement, configuration);
+        if (!IsEditMode) owner.ApplyWorkingConfiguration(configuration, arrangement);
         NotifyNumbers(); NotifyState(); RequestPreview();
     }
     private void NotifyNumbers()
-    { foreach (var property in new[] { nameof(SideText), nameof(TopText), nameof(BottomText), nameof(GapText), nameof(ExtraText) }) OnPropertyChanged(property); }
+    { foreach (var property in new[] { nameof(SideText), nameof(TopText), nameof(BottomText), nameof(GapText), nameof(ExposureItemGapText), nameof(ExtraText) }) OnPropertyChanged(property); }
     internal void StartPreview(object? ownerToken = null)
     { previewOwner = ownerToken; previewActive = true; RequestPreview(); }
     internal void StopPreview(object? ownerToken = null)
@@ -157,18 +174,21 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
                 if (!previewActive) break;
                 var version = previewVersion; var selectedAspect = aspect;
                 var epoch = draftEpoch; var sourceRevision = owner.SourceRevision;
-                var configuration = draft.ForAspect(selectedAspect) with { };
+                var selectedArrangement = arrangement;
+                var configuration = draft.ForAspect(selectedAspect, selectedArrangement) with { };
                 previewCancellation?.Dispose(); previewCancellation = new();
                 try
                 {
-                    var rendered = await owner.RenderRuleDemoAsync(selectedAspect, configuration, previewCancellation.Token);
+                    var rendered = await owner.RenderRuleDemoAsync(selectedAspect, configuration, previewCancellation.Token, selectedArrangement);
                     if (!previewActive) break;
                     if (epoch != draftEpoch || sourceRevision != owner.SourceRevision || version <= CompletedPreviewVersion) continue;
                     // One serial renderer publishes progressive frames during a drag.
                     // No older completion can replace a newer frame. A ratio/preset/source
                     // change invalidates the entire generation, not merely the last frame.
                     PreviewLayout = rendered.Layout; PreviewSourceSize = rendered.SourceSize;
-                    CompletedPreviewVersion = version; PreviewError = ""; PreviewBytes = rendered.Bytes;
+                    CompletedPreviewVersion = version;
+                    PreviewError = rendered.Layout.FellBackFromColumns ? LayoutEngine.ColumnsFallbackWarning : "";
+                    PreviewBytes = rendered.Bytes;
                 }
                 catch (OperationCanceledException) { if (!previewActive) break; }
                 catch (Exception exception)
@@ -228,10 +248,11 @@ public sealed class RuleEditorViewModel(MainViewModel owner) : ObservableObject
     }
     public async Task<bool> SaveAsync()
     {
+        if (owner.IsSettingsReadOnly) { Message = "設定尚未成功讀取，為保護既有預設，目前無法儲存。請重新讀取設定後再試。"; return false; }
         if (!CanAdjustValues) return false;
         if (string.IsNullOrWhiteSpace(Name)) { Message = "請輸入規則名稱。"; return false; }
         if (!CanSave) { Message = "已有同名預設；套用模式請使用不同名稱另存，編輯模式才能更新原預設。"; return false; }
-        if (new[] { Side, Top, Gap, Bottom, Extra }.Any(value => !double.IsFinite(value))) { Message = "請填入有效的邊距數值。"; return false; }
+        if (new[] { Side, Top, Gap, ExposureItemGap, Bottom, Extra }.Any(value => !double.IsFinite(value))) { Message = "請填入有效的邊距數值。"; return false; }
         var expected = IsEditMode ? original : null;
         if (IsEditMode && (expected is null || SelectedPreset != expected)) { Message = "預設已變更，請重新選取後再編輯。"; return false; }
         var rule = Snapshot.Validate() with { Id = IsEditMode ? selectedRuleId! : Guid.NewGuid().ToString("N") };

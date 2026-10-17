@@ -22,6 +22,10 @@
     <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\SettingsNavigationRegression.cs" />
     <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\PresetWorkflowRegression.cs" />
     <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\AspectPreviewRegression.cs" />
+    <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\ColumnFallbackRegression.cs" />
+    <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\SettingsRecoveryRegression.cs" />
+    <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\BottomMarginRegression.cs" />
+    <Compile Include="..\..\tests\PhotoMargin.App.SmokeTests\BuiltInLensRegression.cs" />
   </ItemGroup>
   <Target Name="CopyWinUiApplicationResourcesToPublish" AfterTargets="Publish">
     <ItemGroup>

@@ -108,11 +108,12 @@ public sealed class LayoutEngineTests
         Assert.False(columns.UsesStackedInfo);
         Assert.True(stack.UsesStackedInfo);
         Assert.NotEqual(columns.PhotoBounds, stack.PhotoBounds);
-        Assert.All(stack.TextRuns, run => Assert.Equal(540, (run.Bounds.Left + run.Bounds.Right) / 2, 6));
+        Assert.All(stack.TextRuns.GroupBy(run => run.Bounds.Top), row =>
+            Assert.Equal(540, (row.Min(run => run.Bounds.Left) + row.Max(run => run.Bounds.Right)) / 2, 6));
     }
 
     [Fact]
-    public void AutoRetainsFallbackButExplicitColumnsRejectUnfitInformation()
+    public void ExplicitColumnOverflowSwitchesToValidatedStackWithWarningFlag()
     {
         var metadata = CompleteMetadata() with { Lens = new string('長', 80) };
         var auto = engine.Calculate(new SizeD(1800, 1200), metadata, new LayoutSettings());
@@ -120,9 +121,33 @@ public sealed class LayoutEngineTests
             new LayoutSettings { Arrangement = InformationArrangement.TwoColumns });
         Assert.True(auto.IsValid, string.Join("; ", auto.Errors));
         Assert.True(auto.UsesStackedInfo);
-        Assert.False(columns.IsValid);
-        Assert.False(columns.UsesStackedInfo);
-        Assert.Contains(columns.Errors, message => message.Contains("左右分欄", StringComparison.Ordinal));
+        Assert.True(columns.IsValid, string.Join("; ", columns.Errors));
+        Assert.True(columns.UsesStackedInfo); Assert.True(columns.FellBackFromColumns);
+        Assert.False(auto.FellBackFromColumns); Assert.Empty(LayoutValidator.Validate(columns));
+        Assert.All(columns.TextRuns, run => Assert.Equal(TextAlignment.Center, run.Alignment));
+    }
+
+    [Fact]
+    public void CenteredOverflowNeverSwitchesBackToColumnsOrDisablesSafety()
+    {
+        var metadata = CompleteMetadata() with { Lens = new string('長', 5000) };
+        foreach (var arrangement in new[] { InformationArrangement.TwoColumns, InformationArrangement.Stacked })
+        {
+            var layout = engine.Calculate(new SizeD(4655, 3492), metadata, new LayoutSettings { Arrangement = arrangement });
+            Assert.False(layout.IsValid);
+            Assert.Equal(arrangement == InformationArrangement.TwoColumns, layout.FellBackFromColumns);
+        }
+    }
+
+    [Fact]
+    public void FittingColumnsAndExplicitCenterDoNotReportColumnFailure()
+    {
+        foreach (var arrangement in new[] { InformationArrangement.TwoColumns, InformationArrangement.Stacked })
+        {
+            var layout = engine.Calculate(new SizeD(4655, 3492), CompleteMetadata(), new LayoutSettings { Arrangement = arrangement });
+            Assert.True(layout.IsValid); Assert.False(layout.FellBackFromColumns);
+            Assert.Equal(arrangement == InformationArrangement.Stacked, layout.UsesStackedInfo);
+        }
     }
 
     [Fact]

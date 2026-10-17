@@ -32,28 +32,42 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private LoadedPhoto? demoSource;
     private int demoSourceVersion = -1;
     private SourceAspect demonstrationAspect = SourceAspect.FourByThree;
+    private InformationArrangement demonstrationArrangement = InformationArrangement.TwoColumns;
     internal SourceAspect WorkAspect => photo is null ? SourceAspect.FourByThree : SourceAspects.Closest(photo.OrientedSize);
     internal SourceAspect DemonstrationAspect => demonstrationAspect;
+    internal InformationArrangement DemonstrationArrangement => demonstrationArrangement;
     internal int SourceRevision => sourceVersion;
     internal void SetDemonstrationAspect(SourceAspect value)
     { demonstrationAspect = value; _ = SaveSettingsQuietlyAsync(); }
+    internal void SetDemonstrationArrangement(InformationArrangement value)
+    { demonstrationArrangement = value; _ = SaveSettingsQuietlyAsync(); }
     private DisplayMetadata originalDisplay = new("", "", "", "", "", "", "");
     private int renderVersion, sourceVersion, informationVersion;
     private bool applyingValues, disposed;
     private long saveRevision;
+    private bool settingsLoaded, settingsLoadFailed;
+    public bool IsSettingsReadOnly => !settingsLoaded;
+    public bool HasSettingsLoadFailure => settingsLoadFailed;
     private string previewError = "", persistenceError = "";
+    private string arrangementWarning = "";
+    public string ArrangementWarning => arrangementWarning;
+    private void SetArrangementWarning(string value)
+    {
+        if (SetProperty(ref arrangementWarning, value, nameof(ArrangementWarning))) OnPropertyChanged(nameof(PreviewCaption));
+    }
     private string camera = "", lens = "", focalLength = "", aperture = "", shutter = "", iso = "";
     private string shutterInput = "", inputError = "", captureTimeSource = "尚未載入照片";
     private DateTimeOffset? selectedDate;
     private TimeSpan? selectedTime;
     private int outputSize = 1080;
     private double jpegQuality = 95, photoSideMargin = 48, photoTopMargin = 36, photoInfoGap = 24;
+    private double exposureItemGap = 18;
     private double bottomSafeDistance = 72, cropExtraPadding = 24, primaryFontSize = 28, secondaryFontSize = 22;
-    private double lensFontSize = 22, dateFontSize = 22;
+    private double lensFontSize = 16, dateFontSize = 22;
     private InformationArrangement arrangement = InformationArrangement.Auto;
     private string fontFamily = "Microsoft JhengHei UI";
     private string? selectedMarginRuleId = MarginRule.DefaultId;
-    private bool protectFourByFive = true, protectFiveByFour = true, showGuides = true, isBusy;
+    private bool protectFourByFive = true, protectFiveByFour, showGuides = true, isBusy;
     private int themeChoice;
     private string statusText = "", errorText = "", sourceSummary = "尚未載入照片";
     private byte[]? previewBytes;
@@ -68,6 +82,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public ObservableCollection<MarginRule> MarginRules { get; } = [];
     public RuleEditorViewModel RuleEditor { get; }
     public IReadOnlyList<double> FontSizes { get; } = Enumerable.Range(18, 83).Select(value => (double)value).ToArray();
+    public ObservableCollection<double> LensFontSizes { get; } = new(Enumerable.Range(8, 93).Select(value => (double)value));
     public IReadOnlyList<string> FontChoices { get; } =
         ["Microsoft JhengHei UI", "Microsoft JhengHei", "Segoe UI", "Arial", "Calibri", "Consolas", "Times New Roman"];
     public IReadOnlyList<ArrangementChoice> ArrangementChoices { get; } =
@@ -113,7 +128,28 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public int OutputSize { get => outputSize; set => SetLayout(ref outputSize, Math.Clamp(value, 320, 8192)); }
     public double JpegQuality { get => jpegQuality; set => SetLayout(ref jpegQuality, Finite(value, 95, 50, 100)); }
     public double PrimaryFontSize { get => primaryFontSize; set => SetLayout(ref primaryFontSize, Finite(value, 28, 18, 100)); }
-    public double LensFontSize { get => lensFontSize; set => SetLayout(ref lensFontSize, Finite(value, 22, 18, 100)); }
+    public double LensFontSize
+    {
+        get => lensFontSize;
+        set
+        {
+            var valid = Finite(value, 16, 8, 100);
+            // Keep editable ComboBox text/selection consistent for fractional
+            // values too, including values restored from existing preferences.
+            if (!LensFontSizes.Contains(valid))
+            {
+                var index = 0; while (index < LensFontSizes.Count && LensFontSizes[index] < valid) index++;
+                LensFontSizes.Insert(index, valid);
+            }
+            SetLayout(ref lensFontSize, valid);
+        }
+    }
+    public bool TrySetLensFontSizeText(string text)
+    {
+        if ((!double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) &&
+             !double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) || !double.IsFinite(value)) return false;
+        LensFontSize = value; return true;
+    }
     public double SecondaryFontSize { get => secondaryFontSize; set => SetLayout(ref secondaryFontSize, Finite(value, 22, 18, 100)); }
     public double DateFontSize { get => dateFontSize; set => SetLayout(ref dateFontSize, Finite(value, 22, 18, 100)); }
     public string FontFamily { get => fontFamily; set => SetLayout(ref fontFamily, string.IsNullOrWhiteSpace(value) ? "Microsoft JhengHei UI" : value.Trim()); }
@@ -124,6 +160,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             var valid = Enum.IsDefined(value) ? value : InformationArrangement.Auto;
             if (arrangement == valid) return;
+            SetArrangementWarning("");
+            if (!applyingValues && MarginRules.FirstOrDefault(rule => rule.Id == selectedMarginRuleId) is { } preset)
+                ApplyRule(preset.ForAspect(WorkAspect, valid).ToRule());
             SetLayout(ref arrangement, valid);
             OnPropertyChanged(nameof(SelectedArrangement));
         }
@@ -136,6 +175,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public double PhotoSideMargin => photoSideMargin;
     public double PhotoTopMargin => photoTopMargin;
     public double PhotoInfoGap => photoInfoGap;
+    public double ExposureItemGap => exposureItemGap;
     public double BottomSafeDistance => bottomSafeDistance;
     public double CropExtraPadding => cropExtraPadding;
     public bool ProtectFourByFive => protectFourByFive;
@@ -151,7 +191,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var rule = MarginRules.FirstOrDefault(item => item.Id == value);
             if (value is not null && rule is null) return;
             if (!SetProperty(ref selectedMarginRuleId, value)) return;
-            if (rule is not null) ApplyRule(rule.ForAspect(WorkAspect).ToRule());
+            if (rule is not null) ApplyRule(rule.ForAspect(WorkAspect, Arrangement).ToRule());
             if (!applyingValues) { RequestPreview(); _ = SaveSettingsQuietlyAsync(); }
         }
     }
@@ -182,25 +222,53 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void SetPreviewError(string value) { previewError = value; NotifyErrors(); }
     private void SetPersistenceError(string value) { persistenceError = value; OnPropertyChanged(nameof(PersistenceError)); NotifyErrors(); }
     public bool HasError => ErrorText.Length > 0;
-    public string PreviewCaption => string.Join(" · ", new[] { SourceSummary, InputError.Length > 0 ? InputError : ErrorText.Length > 0 ? ErrorText : StatusText }.Where(text => text.Length > 0));
+    public string PreviewCaption => string.Join(" · ", new[]
+    {
+        SourceSummary, InputError.Length > 0 ? InputError : ErrorText,
+        ArrangementWarning, StatusText
+    }.Where(text => text.Length > 0));
     public byte[]? PreviewBytes { get => previewBytes; private set => SetProperty(ref previewBytes, value); }
 
     public async Task InitializeAsync()
     {
-        persisted = await settingsStore.LoadAsync();
-        lastOutputDirectory = persisted.LastOutputDirectory;
-        demonstrationAspect = persisted.DemonstrationAspect;
-        var layout = persisted.Layout.Validate(); applyingValues = true;
-        OutputSize = layout.OutputSize; JpegQuality = layout.JpegQuality;
-        PrimaryFontSize = layout.PrimaryFontSize; SecondaryFontSize = layout.SecondaryFontSize;
-        LensFontSize = layout.LensFontSize; DateFontSize = layout.DateFontSize; FontFamily = layout.FontFamily;
-        Arrangement = layout.Arrangement;
-        ShowGuides = persisted.ShowGuides; ThemeChoice = (int)persisted.Theme;
-        foreach (var rule in persisted.MarginRules) MarginRules.Add(rule.Validate() with { });
-        selectedMarginRuleId = MarginRules.Any(rule => rule.Id == persisted.SelectedMarginRuleId) ? persisted.SelectedMarginRuleId : MarginRules.FirstOrDefault()?.Id;
-        // Work is a persisted value snapshot, not a live link back to a selected preset.
-        ApplyRule(MarginRule.FromLayout(layout));
-        OnPropertyChanged(nameof(SelectedMarginRuleId)); applyingValues = false; RuleEditor.Begin(selectedMarginRuleId);
+        await RetryLoadSettingsAsync();
+    }
+    public async Task<bool> RetryLoadSettingsAsync()
+    {
+        await preferenceGate.WaitAsync();
+        try
+        {
+            settingsLoaded = false;
+            OnPropertyChanged(nameof(IsSettingsReadOnly)); RuleEditor.RefreshSettingsAccess();
+            PersistedSettings loaded;
+            try { loaded = await settingsStore.LoadAsync(); }
+            catch (SettingsLoadException exception)
+            {
+                settingsLoadFailed = true; OnPropertyChanged(nameof(HasSettingsLoadFailure));
+                SetPersistenceError(exception.Message); return false;
+            }
+            persisted = loaded;
+            lastOutputDirectory = persisted.LastOutputDirectory;
+            demonstrationAspect = persisted.DemonstrationAspect;
+            demonstrationArrangement = persisted.DemonstrationArrangement ?? InformationArrangement.TwoColumns;
+            var layout = persisted.Layout.Validate(); applyingValues = true;
+            OutputSize = layout.OutputSize; JpegQuality = layout.JpegQuality;
+            PrimaryFontSize = layout.PrimaryFontSize; SecondaryFontSize = layout.SecondaryFontSize;
+            LensFontSize = layout.LensFontSize; DateFontSize = layout.DateFontSize; FontFamily = layout.FontFamily;
+            Arrangement = layout.Arrangement;
+            ShowGuides = persisted.ShowGuides; ThemeChoice = (int)persisted.Theme;
+            MarginRules.Clear();
+            foreach (var rule in persisted.MarginRules) MarginRules.Add(rule.Validate() with { });
+            selectedMarginRuleId = MarginRules.Any(rule => rule.Id == persisted.SelectedMarginRuleId) ? persisted.SelectedMarginRuleId : MarginRules.FirstOrDefault()?.Id;
+            // Work is a persisted value snapshot, not a live link back to a selected preset.
+            ApplyRule(MarginRule.FromLayout(layout));
+            settingsLoaded = true; settingsLoadFailed = false;
+            OnPropertyChanged(nameof(IsSettingsReadOnly)); OnPropertyChanged(nameof(HasSettingsLoadFailure));
+            SetPersistenceError("");
+            OnPropertyChanged(nameof(SelectedMarginRuleId)); applyingValues = false; RuleEditor.Begin(selectedMarginRuleId);
+            RequestPreview(); return true;
+        }
+        finally { applyingValues = false; preferenceGate.Release(); }
     }
     public async Task LoadPhotoAsync(string path)
     {
@@ -218,8 +286,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             try
             {
                 if (disposed) return;
+                var previousAspect = WorkAspect;
+                var selectedPreset = MarginRules.FirstOrDefault(rule => rule.Id == selectedMarginRuleId);
+                var workIsUnmodifiedPresetCopy = selectedPreset is not null &&
+                    MarginConfiguration.From(WorkingMargins) == selectedPreset.ForAspect(previousAspect, Arrangement);
                 photo?.Dispose(); photo = candidate; candidate = null;
-                sourceVersion++; currentLayout = null; PreviewBytes = null; SetPreviewError("");
+                if (workIsUnmodifiedPresetCopy)
+                    ApplyRule(selectedPreset!.ForAspect(WorkAspect, Arrangement).ToRule());
+                sourceVersion++; currentLayout = null; PreviewBytes = null; SetPreviewError(""); SetArrangementWarning("");
                 ApplyPhotoInformation(photo.Metadata, captured); UpdateSourceSummary(photo.Metadata);
                 SourceFileSizeText = bytes >= 1048576 ? $"{bytes / 1048576d:0.##} MB" : $"{bytes / 1024d:0.#} KB";
                 foreach (var property in new[] { nameof(HasPhoto), nameof(SourcePath), nameof(SourceFileName), nameof(SourceFileSizeText), nameof(CanReload), nameof(CanExport) }) OnPropertyChanged(property);
@@ -290,8 +364,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (MarginRules.Any(item => item.Id != rule.Id && string.Equals(item.Name, rule.Name, StringComparison.OrdinalIgnoreCase))) return false;
             var rules = MarginRules.Select(item => item with { }).ToList();
             if (index >= 0) rules[index] = rule.Validate(); else rules.Add(rule.Validate());
-            var snapshot = BuildPersisted() with { MarginRules = rules };
+            var snapshot = BuildPersisted() with { MarginRules = rules, SelectedMarginRuleId = rule.Id };
             if (!await WriteSettingsSnapshotAsync(snapshot, ++saveRevision)) return false;
+            selectedMarginRuleId = rule.Id;
             if (index >= 0) MarginRules[index] = rule.Validate(); else MarginRules.Add(rule.Validate());
             OnPropertyChanged(nameof(SelectedMarginRuleId));
             return true;
@@ -323,26 +398,33 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private void ApplyRule(MarginRule rule)
     {
-        photoSideMargin = rule.Side; photoTopMargin = rule.Top; photoInfoGap = rule.Gap;
+        photoSideMargin = rule.Side; photoTopMargin = rule.Top; photoInfoGap = rule.Gap; exposureItemGap = rule.ExposureItemGap;
         bottomSafeDistance = rule.Bottom; cropExtraPadding = rule.Extra;
         protectFourByFive = rule.ProtectPortrait; protectFiveByFour = rule.ProtectLandscape;
-        foreach (var property in new[] { nameof(PhotoSideMargin), nameof(PhotoTopMargin), nameof(PhotoInfoGap), nameof(BottomSafeDistance), nameof(CropExtraPadding), nameof(ProtectFourByFive), nameof(ProtectFiveByFour) }) OnPropertyChanged(property);
+        foreach (var property in new[] { nameof(PhotoSideMargin), nameof(PhotoTopMargin), nameof(PhotoInfoGap), nameof(ExposureItemGap), nameof(BottomSafeDistance), nameof(CropExtraPadding), nameof(ProtectFourByFive), nameof(ProtectFiveByFour) }) OnPropertyChanged(property);
     }
     internal MarginRule WorkingMargins => MarginRule.FromLayout(BuildLayoutSettings());
     internal void ApplyWorkingMargins(MarginRule snapshot)
     {
         ApplyRule(snapshot.ValidateValues()); RequestPreview(); _ = SaveSettingsQuietlyAsync();
     }
+    internal void ApplyWorkingConfiguration(MarginConfiguration configuration, InformationArrangement selectedArrangement)
+    {
+        arrangement = selectedArrangement; SetArrangementWarning("");
+        OnPropertyChanged(nameof(Arrangement)); OnPropertyChanged(nameof(SelectedArrangement));
+        ApplyWorkingMargins(configuration.ToRule());
+    }
     internal void ApplyPresetToWork(MarginRule preset)
     {
         selectedMarginRuleId = preset.Id; OnPropertyChanged(nameof(SelectedMarginRuleId));
-        ApplyWorkingMargins(preset.ForAspect(WorkAspect).ToRule());
+        ApplyWorkingMargins(preset.ForAspect(WorkAspect, Arrangement).ToRule());
     }
     internal async Task<(byte[] Bytes, LayoutResult Layout, SizeD SourceSize)> RenderRuleDemoAsync(
-        SourceAspect aspect, MarginConfiguration configuration, CancellationToken token)
+        SourceAspect aspect, MarginConfiguration configuration, CancellationToken token,
+        InformationArrangement? selectedArrangement = null)
     {
         // Capture all mutable UI state before awaiting; serialize only our preview copies.
-        var settings = configuration.ApplyTo(BuildLayoutSettings()) with { OutputSize = 720 };
+        var settings = configuration.ApplyTo(BuildLayoutSettings()) with { OutputSize = 720, Arrangement = selectedArrangement ?? Arrangement };
         var metadata = HasPhoto ? GetDisplayMetadata() : LayoutPreviewSource.DemoMetadata;
         await demoGate.WaitAsync(token);
         try
@@ -388,15 +470,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             try
             {
                 if (photo is null || disposed) return;
-                var layout = layoutEngine.Calculate(photo.OrientedSize, GetDisplayMetadata(), BuildLayoutSettings());
+                var sourceSize = photo.OrientedSize;
+                var metadata = GetDisplayMetadata(); var settings = BuildLayoutSettings();
+                var layout = await Task.Run(() => layoutEngine.Calculate(sourceSize, metadata, settings), token);
+                if (disposed || version != renderVersion || token.IsCancellationRequested) return;
                 if (!layout.IsValid)
                 {
                     if (!disposed && version == renderVersion && !token.IsCancellationRequested)
+                    {
+                        ApplyColumnsFallback(layout);
                         SetPreviewError("安全檢查失敗，無法匯出：" + string.Join("；", layout.Errors));
+                    }
                     return;
                 }
                 var bytes = await previewService.RenderAsync(photo, layout, ShowGuides, token);
                 if (disposed || version != renderVersion || token.IsCancellationRequested) return;
+                ApplyColumnsFallback(layout);
                 currentLayout = layout; PreviewBytes = bytes; SetPreviewError("");
                 OnPropertyChanged(nameof(CanExport));
             }
@@ -405,12 +494,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         catch (OperationCanceledException) { }
         catch (Exception exception) { if (!disposed && version == renderVersion) SetPreviewError($"預覽失敗：{exception.Message}"); }
     }
+    private void ApplyColumnsFallback(LayoutResult layout)
+    {
+        if (!layout.FellBackFromColumns || arrangement != InformationArrangement.TwoColumns) return;
+        // This result already contains a fully revalidated centered layout. Do not
+        // invoke the public setter here: it would cancel the result being accepted.
+        arrangement = InformationArrangement.Stacked;
+        SetArrangementWarning(LayoutEngine.ColumnsFallbackWarning);
+        OnPropertyChanged(nameof(Arrangement)); OnPropertyChanged(nameof(SelectedArrangement));
+        _ = SaveSettingsQuietlyAsync();
+    }
     private LayoutSettings BuildLayoutSettings() => new LayoutSettings
     {
         OutputSize = OutputSize, JpegQuality = (int)Math.Round(JpegQuality), FontFamily = FontFamily,
         Arrangement = Arrangement,
         PhotoSideMargin = photoSideMargin, PhotoTopMargin = photoTopMargin,
-        PhotoInfoGap = photoInfoGap, BottomSafeDistance = bottomSafeDistance, CropExtraPadding = cropExtraPadding,
+        PhotoInfoGap = photoInfoGap, ExposureItemGap = exposureItemGap, BottomSafeDistance = bottomSafeDistance, CropExtraPadding = cropExtraPadding,
         PrimaryFontSize = PrimaryFontSize, LensFontSize = LensFontSize, SecondaryFontSize = SecondaryFontSize, DateFontSize = DateFontSize,
         ProtectFourByFive = protectFourByFive, ProtectFiveByFour = protectFiveByFour,
         Visibility = new FieldVisibility { Camera = true, Lens = true, Exposure = true, Date = true }
@@ -434,7 +533,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         Layout = BuildLayoutSettings(), ShowGuides = ShowGuides, Theme = (ThemePreference)ThemeChoice,
         LastOutputDirectory = lastOutputDirectory, MarginRules = MarginRules.Select(rule => rule with { }).ToList(),
-        SelectedMarginRuleId = SelectedMarginRuleId, DemonstrationAspect = demonstrationAspect
+        SelectedMarginRuleId = SelectedMarginRuleId, DemonstrationAspect = demonstrationAspect, DemonstrationArrangement = demonstrationArrangement
     };
     private async Task<bool> SaveSettingsQuietlyAsync()
     {
@@ -444,6 +543,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     private async Task<bool> WriteSettingsSnapshotAsync(PersistedSettings snapshot, long revision)
     {
+        // Neither auto-save, preset commands nor close-time flush may serialize
+        // temporary defaults over a document that has not been successfully read.
+        if (!settingsLoaded) return false;
         try
         {
             // Rendering cancellation must not cancel a user's already queued preferences.

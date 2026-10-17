@@ -26,7 +26,6 @@
         <NavigationView.MenuItems>
             <NavigationViewItem x:Name="GeneralItem" Content="一般設定" Tag="General"><NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon></NavigationViewItem>
             <NavigationViewItem x:Name="LayoutItem" Content="版面設定" Tag="Layout"><NavigationViewItem.Icon><SymbolIcon Symbol="Page" /></NavigationViewItem.Icon></NavigationViewItem>
-            <NavigationViewItem x:Name="CameraItem" Content="相機資訊設定" Tag="Camera"><NavigationViewItem.Icon><SymbolIcon Symbol="Camera" /></NavigationViewItem.Icon></NavigationViewItem>
             <NavigationViewItem x:Name="ExportItem" Content="匯出設定" Tag="Export"><NavigationViewItem.Icon><SymbolIcon Symbol="Save" /></NavigationViewItem.Icon></NavigationViewItem>
         </NavigationView.MenuItems>
         <Border Background="{ThemeResource SettingsSurfaceBrush}" CornerRadius="4,0,0,0" Margin="0,8,0,0">
@@ -40,16 +39,6 @@
                         <RadioButtons x:Name="ThemeOptions" Header="主題" MaxColumns="1" SelectedIndex="{Binding ThemeChoice, Mode=TwoWay}">
                             <x:String>系統預設</x:String><x:String>深色</x:String><x:String>淺色</x:String>
                         </RadioButtons>
-                    </StackPanel>
-                    <StackPanel x:Name="CameraContent" Spacing="16" Visibility="Collapsed">
-                        <TextBlock Text="相機資訊設定" Style="{ThemeResource TitleTextBlockStyle}" />
-                        <TextBlock Text="照片資訊由來源 EXIF 自動讀取；手動修改及重新讀取請使用主畫面的照片資訊區。" TextWrapping="Wrap" />
-                        <TextBlock Text="缺少 EXIF 的欄位保持空白。拍攝日期缺值時，使用來源檔案的建立日期與時間。" TextWrapping="Wrap" />
-                        <TextBlock Text="目前來源" Style="{ThemeResource SubtitleTextBlockStyle}" />
-                        <TextBlock Text="{Binding SourceFileName}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding SourceSummary}" TextWrapping="Wrap" />
-                        <TextBlock Text="拍攝時間來源" />
-                        <TextBlock Text="{Binding CaptureTimeSource}" TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel x:Name="ExportContent" Spacing="16" Visibility="Collapsed">
                         <TextBlock Text="匯出設定" Style="{ThemeResource TitleTextBlockStyle}" />
@@ -82,6 +71,9 @@
                             <ComboBox x:Name="ImageAspectSelector" Header="圖片比例" HorizontalAlignment="Stretch"
                                       ItemsSource="{Binding RuleEditor.AspectChoices}" SelectedIndex="{Binding RuleEditor.AspectIndex, Mode=TwoWay}"
                                       IsEnabled="{Binding RuleEditor.CanEdit}" AutomationProperties.Name="圖片比例" />
+                            <ComboBox x:Name="InformationArrangementSelector" Header="排列設定" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding RuleEditor.ArrangementChoices}" SelectedIndex="{Binding RuleEditor.ArrangementIndex, Mode=TwoWay}"
+                                      IsEnabled="{Binding RuleEditor.CanEdit}" AutomationProperties.Name="排列設定" />
                             <RadioButtons x:Name="RuleModeOptions" Header="規則編輯模式" MaxColumns="1" SelectedIndex="{Binding RuleEditor.ModeIndex, Mode=OneWay}"
                                           IsEnabled="{Binding RuleEditor.CanEdit}" SelectionChanged="RuleMode_Changed">
                                 <x:String>套用預設內容</x:String><x:String>編輯預設內容</x:String>
@@ -98,16 +90,20 @@
                                         <Slider x:Name="TopMarginSlider" Minimum="0" Maximum="400" StepFrequency="1" Value="{Binding RuleEditor.Top, Mode=TwoWay}" AutomationProperties.Name="上方邊距（1080 基準 px）" />
                                     </StackPanel>
                                     <StackPanel Spacing="4">
-                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="底部安全距離" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.BottomText}" TextAlignment="Right" /></Grid>
-                                        <Slider x:Name="BottomMarginSlider" Minimum="0" Maximum="540" StepFrequency="1" Value="{Binding RuleEditor.Bottom, Mode=TwoWay}" AutomationProperties.Name="底部安全距離（1080 基準 px）" />
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="下方邊距" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.BottomText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="BottomMarginSlider" Minimum="0" Maximum="540" StepFrequency="1" Value="{Binding RuleEditor.Bottom, Mode=TwoWay}" AutomationProperties.Name="下方邊距（1080 基準 px）" ToolTipService.ToolTip="可見文字最下緣到完整畫布底邊的距離；明確啟用的上下裁切保護仍優先。" />
                                     </StackPanel>
                                     <StackPanel Spacing="4">
-                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="照片資訊間距" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.GapText}" TextAlignment="Right" /></Grid>
-                                        <Slider x:Name="InformationGapSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.Gap, Mode=TwoWay}" AutomationProperties.Name="照片資訊間距（1080 基準 px）" />
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="照片與文字間隔" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.GapText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="InformationGapSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.Gap, Mode=TwoWay}" AutomationProperties.Name="照片與文字間隔（1080 基準 px）" ToolTipService.ToolTip="照片下邊緣與最上方可見文字之間的垂直距離。" />
                                     </StackPanel>
                                     <StackPanel Spacing="4">
-                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="裁切文字額外留白" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.ExtraText}" TextAlignment="Right" /></Grid>
-                                        <Slider x:Name="ExtraPaddingSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.Extra, Mode=TwoWay}" AutomationProperties.Name="裁切文字額外留白（1080 基準 px）" />
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="焦距、曝光三要素間隔" TextWrapping="Wrap" /><TextBlock x:Name="ExposureItemGapValue" Grid.Column="1" Text="{Binding RuleEditor.ExposureItemGapText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="ExposureItemGapSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.ExposureItemGap, Mode=TwoWay}" AutomationProperties.Name="焦距、曝光三要素間隔（1080 基準 px）" ToolTipService.ToolTip="焦距、光圈、快門、ISO 相鄰可見項目的水平距離；不改字距或行距。" />
+                                    </StackPanel>
+                                    <StackPanel Spacing="4">
+                                        <Grid ColumnSpacing="8"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="80" /></Grid.ColumnDefinitions><TextBlock Text="文字與左右邊界" /><TextBlock Grid.Column="1" Text="{Binding RuleEditor.ExtraText}" TextAlignment="Right" /></Grid>
+                                        <Slider x:Name="ExtraPaddingSlider" Minimum="0" Maximum="200" StepFrequency="1" Value="{Binding RuleEditor.Extra, Mode=TwoWay}" AutomationProperties.Name="文字與左右邊界（1080 基準 px）" ToolTipService.ToolTip="從裁切可見區的左右邊界向內保留距離，只影響文字可用寬度，不內縮上下邊界。" />
                                     </StackPanel>
                                 </StackPanel>
                             </ContentControl>

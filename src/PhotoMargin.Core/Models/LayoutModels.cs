@@ -37,15 +37,20 @@ public sealed record LayoutSettings
     public double PhotoSideMargin { get; init; } = 48;
     public double PhotoTopMargin { get; init; } = 36;
     public double PhotoInfoGap { get; init; } = 24;
+    // Horizontal ink-to-ink spacing between exposure items, in 1080-based pixels.
+    // Approximately the previous three spaces at the default 22px font.
+    public double ExposureItemGap { get; init; } = 18;
+    // JSON names retained for compatibility: visible-ink bottom margin and
+    // horizontal text inset respectively, both in 1080-based pixels.
     public double BottomSafeDistance { get; init; } = 72;
     public double CropExtraPadding { get; init; } = 24;
     public double PrimaryFontSize { get; init; } = 28;
     public double SecondaryFontSize { get; init; } = 22;
-    public double LensFontSize { get; init; } = 22;
+    public double LensFontSize { get; init; } = 16;
     public double DateFontSize { get; init; } = 22;
     public double MinimumFontSize { get; init; } = 18;
     public bool ProtectFourByFive { get; init; } = true;
-    public bool ProtectFiveByFour { get; init; } = true;
+    public bool ProtectFiveByFour { get; init; }
     public string FontFamily { get; init; } = "Microsoft JhengHei UI";
     public InformationArrangement Arrangement { get; init; } = InformationArrangement.Auto;
     public FieldVisibility Visibility { get; init; } = new();
@@ -57,14 +62,15 @@ public sealed record LayoutSettings
         Arrangement = Enum.IsDefined(Arrangement) ? Arrangement : InformationArrangement.Auto,
         OutputSize = Math.Clamp(OutputSize, 320, 8192),
         JpegQuality = Math.Clamp(JpegQuality, 50, 100),
-        PhotoSideMargin = Math.Clamp(PhotoSideMargin, 0, 400),
-        PhotoTopMargin = Math.Clamp(PhotoTopMargin, 0, 400),
-        PhotoInfoGap = Math.Clamp(PhotoInfoGap, 0, 200),
-        BottomSafeDistance = Math.Clamp(BottomSafeDistance, 0, 540),
-        CropExtraPadding = Math.Clamp(CropExtraPadding, 0, 200),
+        PhotoSideMargin = Math.Clamp(double.IsFinite(PhotoSideMargin) ? PhotoSideMargin : 48, 0, 400),
+        PhotoTopMargin = Math.Clamp(double.IsFinite(PhotoTopMargin) ? PhotoTopMargin : 36, 0, 400),
+        PhotoInfoGap = Math.Clamp(double.IsFinite(PhotoInfoGap) ? PhotoInfoGap : 24, 0, 200),
+        ExposureItemGap = Math.Clamp(double.IsFinite(ExposureItemGap) ? ExposureItemGap : 18, 0, 200),
+        BottomSafeDistance = Math.Clamp(double.IsFinite(BottomSafeDistance) ? BottomSafeDistance : 72, 0, 540),
+        CropExtraPadding = Math.Clamp(double.IsFinite(CropExtraPadding) ? CropExtraPadding : 24, 0, 200),
         PrimaryFontSize = Math.Clamp(PrimaryFontSize, 18, 100),
         SecondaryFontSize = Math.Clamp(SecondaryFontSize, 18, 100),
-        LensFontSize = Math.Clamp(double.IsFinite(LensFontSize) ? LensFontSize : 22, 18, 100),
+        LensFontSize = Math.Clamp(double.IsFinite(LensFontSize) ? LensFontSize : 16, 8, 100),
         DateFontSize = Math.Clamp(double.IsFinite(DateFontSize) ? DateFontSize : 22, 18, 100),
         MinimumFontSize = Math.Clamp(MinimumFontSize, 12, 48)
     };
@@ -89,9 +95,15 @@ public sealed record LayoutResult(
 {
     public bool IsValid => Errors.Count == 0;
     public bool HasInformation => TextRuns.Count > 0;
+    // A recoverable width failure in explicitly selected columns, not a waived
+    // validation error: the returned stacked layout is validated independently.
+    public bool FellBackFromColumns { get; init; }
+    public bool ProtectFourByFive { get; init; } = true;
+    public bool ProtectFiveByFour { get; init; }
 }
 
 public interface ITextMeasurer
 {
     SizeD Measure(string text, string fontFamily, double fontSize);
+    double MeasureBaseline(string text, string fontFamily, double fontSize) => Measure(text, fontFamily, fontSize).Height;
 }

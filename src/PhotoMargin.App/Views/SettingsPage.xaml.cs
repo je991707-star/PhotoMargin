@@ -8,7 +8,7 @@ using PhotoMargin.App.ViewModels;
 
 namespace PhotoMargin.App.Views;
 
-public enum SettingsSection { General, Layout, Camera, Export }
+public enum SettingsSection { General, Layout, Export }
 
 public sealed partial class SettingsPage : Page
 {
@@ -48,7 +48,6 @@ public sealed partial class SettingsPage : Page
         GeneralContent.Visibility = section == SettingsSection.General ? Visibility.Visible : Visibility.Collapsed;
         CommonSettingsScrollViewer.Visibility = section == SettingsSection.Layout ? Visibility.Collapsed : Visibility.Visible;
         LayoutContent.Visibility = section == SettingsSection.Layout ? Visibility.Visible : Visibility.Collapsed;
-        CameraContent.Visibility = section == SettingsSection.Camera ? Visibility.Visible : Visibility.Collapsed;
         ExportContent.Visibility = section == SettingsSection.Export ? Visibility.Visible : Visibility.Collapsed;
         initialized = true;
         if (IsLoaded)

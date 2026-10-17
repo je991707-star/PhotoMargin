@@ -179,11 +179,12 @@ public sealed partial class MainWindow
             await Task.Delay(600);
             await CaptureWorkspaceAsync("figma-settings-layout.png");
             await CaptureWindowAsync("figma-settings-layout-window.png");
+            ViewModel.RuleEditor.ArrangementIndex = ViewModel.Arrangement == InformationArrangement.Stacked ? 1 : 0;
             ViewModel.RuleEditor.AspectIndex = (int)ViewModel.WorkAspect;
             ViewModel.RuleEditor.Name = "QA margin rule"; ViewModel.RuleEditor.Side = 64;
             Check(await ViewModel.RuleEditor.SaveAsync(), "Save new margin rule", checks);
             var rule = ViewModel.MarginRules.First(item => item.Name == "QA margin rule");
-            Check(ViewModel.SelectedMarginRuleId == MarginRule.DefaultId && ViewModel.PhotoSideMargin == 64 && ViewModel.MarginRules.First(rule => rule.Id == MarginRule.DefaultId).Side == 48,
+            Check(ViewModel.SelectedMarginRuleId == rule.Id && ViewModel.PhotoSideMargin == 64 && ViewModel.MarginRules.First(rule => rule.Id == MarginRule.DefaultId).Side == 48,
                 "Apply-mode changes work, saving another preset never overwrites original", checks);
             page.RequestBack(); await Task.Delay(100);
             Check(WorkspaceGrid.Visibility == Visibility.Visible && ViewModel.SourcePath == fixture && ViewModel.Camera == "Keep manual camera", "Direct layout return preserves work", checks);
@@ -207,8 +208,15 @@ public sealed partial class MainWindow
             var nativeToggle = Descendants(navigation).OfType<Button>().First(button => button.Name == "TogglePaneButton");
             InvokeButton(nativeToggle); await Task.Delay(250);
             Check(navigation.IsPaneOpen && toggle.Visibility == Visibility.Visible, "Native toggle reopens reference header", checks);
-            Check(navigation.MenuItems.Count == 4 && !navigation.IsSettingsVisible && page.SelectedSection == SettingsSection.General, "Four settings destinations; no duplicate Settings item", checks);
+            Check(navigation.MenuItems.OfType<NavigationViewItem>().Select(item => item.Tag?.ToString()).SequenceEqual(new[] { "General", "Layout", "Export" }) &&
+                  !navigation.IsSettingsVisible && page.SelectedSection == SettingsSection.General,
+                "Only General, Layout and Export settings destinations, in order; no duplicate Settings item", checks);
+            Check(page.FindName("CameraItem") is null && page.FindName("CameraContent") is null && Enum.GetValues<SettingsSection>().Length == 3,
+                "Camera settings destination and content removed rather than hidden", checks);
             var search = (AutoSuggestBox)page.FindName("SettingsSearch");
+            search.Text = "相機"; await Task.Delay(400);
+            Check(navigation.MenuItems.OfType<NavigationViewItem>().All(item => item.Visibility == Visibility.Collapsed),
+                "Search cannot expose the removed camera settings destination", checks);
             search.Text = "版面"; await Task.Delay(400);
             Check(navigation.MenuItems.OfType<NavigationViewItem>().Count(item => item.Visibility == Visibility.Visible) == 1, "Settings search filters navigation", checks);
             search.Text = "";
@@ -220,7 +228,7 @@ public sealed partial class MainWindow
             var homeState = LayoutState(); var homePreview = ViewModel.PreviewBytes;
             var returnEvents = 0; page.BackRequested += (_, _) => returnEvents++;
             page.NavigateTo(SettingsSection.Layout); page.NavigateTo(SettingsSection.General);
-            page.NavigateTo(SettingsSection.Camera); page.NavigateTo(SettingsSection.Export);
+            page.NavigateTo(SettingsSection.Export);
             InvokeButton(back); await Task.Delay(100);
             Check(WorkspaceGrid.Visibility == Visibility.Visible && SettingsFrame.Content is null && SettingsFrame.Visibility == Visibility.Collapsed,
                 "One custom back click returns home after switching all settings sections", checks);
@@ -296,7 +304,7 @@ public sealed partial class MainWindow
                 "Narrow settings retain native compact navigation/back", checks);
             await CaptureWorkspaceAsync("figma-settings-compact.png");
             var nativeBack = Descendants(navigation).OfType<Button>().First(button => button.Name == "NavigationViewBackButton");
-            page.NavigateTo(SettingsSection.Layout); page.NavigateTo(SettingsSection.Camera); page.NavigateTo(SettingsSection.Export);
+            page.NavigateTo(SettingsSection.Layout); page.NavigateTo(SettingsSection.Export);
             InvokeButton(nativeBack); await Task.Delay(100);
             Check(WorkspaceGrid.Visibility == Visibility.Visible && SettingsFrame.Content is null && ViewModel.HasPhoto,
                 "Native compact NavigationView back also returns directly home", checks);
@@ -349,7 +357,7 @@ public sealed partial class MainWindow
         }
     }
     private object LayoutState() => (ViewModel.SelectedMarginRuleId, ViewModel.PhotoSideMargin, ViewModel.PhotoTopMargin,
-        ViewModel.PhotoInfoGap, ViewModel.BottomSafeDistance, ViewModel.CropExtraPadding, ViewModel.FontFamily,
+        ViewModel.PhotoInfoGap, ViewModel.ExposureItemGap, ViewModel.BottomSafeDistance, ViewModel.CropExtraPadding, ViewModel.FontFamily,
         ViewModel.PrimaryFontSize, ViewModel.LensFontSize, ViewModel.SecondaryFontSize, ViewModel.DateFontSize,
         ViewModel.OutputSize, ViewModel.JpegQuality, ViewModel.ShowGuides, ViewModel.Arrangement);
     private static ViewModels.MainViewModel CreateRegressionViewModel(string settingsPath)

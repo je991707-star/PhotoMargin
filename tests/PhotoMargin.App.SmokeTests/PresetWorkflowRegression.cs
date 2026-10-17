@@ -57,8 +57,8 @@ public sealed partial class MainWindow
             await Task.Delay(350);
             Check(!delete.IsEnabled && ViewModel.RuleEditor.Mode == PresetMode.Apply && ViewModel.RuleEditor.BeginDeletion() is null,
                 "Apply mode disables native delete and rejects direct deletion entrance", checks);
-            Check(page.FindName("NewRuleButton") is null && Descendants((DependencyObject)page.FindName("LayoutContent")).OfType<Slider>().Count() == 5,
-                "Figma exposes only five sliders, save and delete, without new-rule or protection entrances", checks);
+            Check(page.FindName("NewRuleButton") is null && Descendants((DependencyObject)page.FindName("LayoutContent")).OfType<Slider>().Count() == 6,
+                "Only the requested sixth item-spacing slider is added; no new-rule or protection entrances", checks);
             name.Text = "UI preset"; side.Value = 64; await Task.Delay(150); InvokeButton(save);
             await UntilPresetAsync(() => !ViewModel.RuleEditor.IsSaving && ViewModel.MarginRules.Any(rule => rule.Name == "UI preset"));
             var preset = ViewModel.MarginRules.Single(rule => rule.Name == "UI preset");

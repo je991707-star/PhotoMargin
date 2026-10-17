@@ -50,9 +50,10 @@ public static class CropGeometry
         }
 
         var padding = settings.CropExtraPadding * settings.Scale;
-        var safe = visible.Inset(padding);
-        var bottom = Math.Min(safe.Bottom, size - settings.BottomSafeDistance * settings.Scale);
-        return new RectD(safe.Left, safe.Top, safe.Right, bottom);
+        // This parameter is horizontal only. Vertical limits come exclusively
+        // from explicitly enabled crops and the requested bottom margin.
+        var bottom = Math.Min(visible.Bottom, size - settings.BottomSafeDistance * settings.Scale);
+        return new RectD(visible.Left + padding, visible.Top, visible.Right - padding, bottom);
     }
 
 }

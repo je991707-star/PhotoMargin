@@ -51,6 +51,31 @@ public sealed partial class MainWindow : Window
     private async Task InitializeAsync()
     {
         await ViewModel.InitializeAsync(); ApplyTheme(); SyncOutputSizeSelection();
+        if (!ViewModel.HasSettingsLoadFailure) return;
+        if (!RootGrid.IsLoaded)
+        {
+            var ready = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            void Loaded(object sender, RoutedEventArgs args) => ready.TrySetResult();
+            RootGrid.Loaded += Loaded;
+            try { await ready.Task; }
+            finally { RootGrid.Loaded -= Loaded; }
+        }
+        InteractionHost.IsEnabled = false;
+        try
+        {
+            while (!closed && ViewModel.HasSettingsLoadFailure)
+            {
+                var dialog = new ContentDialog
+                {
+                    XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
+                    Title = "無法讀取設定", Content = ViewModel.PersistenceError + "\n\n重試會重新載入原設定；暫不重試時，本次使用期間不會保存設定或預設，可重新啟動程式再試。",
+                    PrimaryButtonText = "重試", CloseButtonText = "暫不重試", DefaultButton = ContentDialogButton.Primary
+                };
+                if (await dialog.ShowAsync() != ContentDialogResult.Primary) break;
+                if (await ViewModel.RetryLoadSettingsAsync()) { ApplyTheme(); SyncOutputSizeSelection(); }
+            }
+        }
+        finally { InteractionHost.IsEnabled = true; }
     }
     private void SyncOutputSizeSelection()
     {
@@ -58,6 +83,17 @@ public sealed partial class MainWindow : Window
         OutputSizeBox.SelectedIndex = ViewModel.OutputSize switch { 1080 => 0, 2048 => 1, _ => 2 };
         CustomOutputSizeBox.Visibility = OutputSizeBox.SelectedIndex == 2 ? Visibility.Visible : Visibility.Collapsed;
         syncingOutputSize = false;
+    }
+    private void LensFontSize_TextSubmitted(ComboBox sender, ComboBoxTextSubmittedEventArgs args)
+    {
+        args.Handled = true;
+        ApplyLensFontSizeText(sender, args.Text);
+    }
+    private void ApplyLensFontSizeText(ComboBox sender, string text)
+    {
+        ViewModel.TrySetLensFontSizeText(text);
+        sender.SelectedItem = ViewModel.LensFontSize;
+        sender.Text = ViewModel.LensFontSize.ToString("0.##", System.Globalization.CultureInfo.CurrentCulture);
     }
     private void OutputSize_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {

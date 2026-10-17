@@ -90,8 +90,8 @@ public sealed class ImageRenderer
         var portrait = CropGeometry.VisibleRect(layout.CanvasSize, 4d / 5d);
         var landscape = CropGeometry.VisibleRect(layout.CanvasSize, 5d / 4d);
 
-        DrawRectangle(image, portrait, "#5588CC", 2);
-        DrawRectangle(image, landscape, "#DD8A34", 2);
+        if (layout.ProtectFourByFive) DrawRectangle(image, portrait, "#5588CC", 2);
+        if (layout.ProtectFiveByFour) DrawRectangle(image, landscape, "#DD8A34", 2);
         DrawRectangle(image, layout.TextSafeBounds, "#37A866", 2);
     }
 

@@ -32,17 +32,22 @@ public sealed partial class StateAndPersistenceTests : IDisposable
     }
     private string BlockedStore()
     {
-        var blocker = Path.Combine(root, "blocked"); File.WriteAllText(blocker, "Test-owned blocker.");
+        var blocker = Path.Combine(root, "blocked"); Directory.CreateDirectory(blocker);
         return Path.Combine(blocker, "settings.json");
+    }
+    private static void BlockStoreWrites(string path)
+    {
+        var directory = Path.GetDirectoryName(path)!;
+        Directory.Delete(directory); File.WriteAllText(directory, "Test-owned write blocker after a successful read.");
     }
 
     [Fact]
     public void RecoveringPreviewClearsOnlyItsOwnFailure() => Ui.Run(async () =>
     {
         using var vm = Create(); await vm.InitializeAsync(); await vm.LoadPhotoAsync(Source()); await Until(() => vm.CanExport);
-        vm.Arrangement = InformationArrangement.TwoColumns; vm.Lens = new string('長', 100);
+        vm.ApplyWorkingMargins(new MarginRule { Top = 400, Bottom = 540, Gap = 200 });
         await Until(() => vm.ErrorText.Contains("安全檢查失敗", StringComparison.Ordinal)); Assert.False(vm.CanExport);
-        vm.Lens = "Short lens"; await Until(() => vm.CanExport);
+        vm.ApplyWorkingMargins(new MarginRule()); await Until(() => vm.CanExport);
         Assert.Empty(vm.ErrorText); Assert.DoesNotContain("安全檢查失敗", vm.PreviewCaption);
         await vm.FlushSettingsAsync();
     });
@@ -51,6 +56,7 @@ public sealed partial class StateAndPersistenceTests : IDisposable
     public void PreviewCannotEraseSaveFailureAndSuccessfulRetryClearsIt() => Ui.Run(async () =>
     {
         var path = BlockedStore(); using var vm = Create(path); await vm.InitializeAsync();
+        BlockStoreWrites(path);
         await vm.LoadPhotoAsync(Source()); await Until(() => vm.CanExport);
         vm.JpegQuality = 91; await Until(() => vm.CanExport && vm.PersistenceError.Length > 0);
         Assert.Contains("無法儲存設定", vm.ErrorText);
@@ -65,6 +71,7 @@ public sealed partial class StateAndPersistenceTests : IDisposable
     public void FailedRuleSaveRetainsDraftAndRetryDoesNotDuplicate() => Ui.Run(async () =>
     {
         var path = BlockedStore(); using var vm = Create(path); await vm.InitializeAsync();
+        BlockStoreWrites(path);
         vm.RuleEditor.Name = "Retry rule"; vm.RuleEditor.Side = 65;
         Assert.False(await vm.RuleEditor.SaveAsync()); Assert.Contains("尚未儲存", vm.RuleEditor.Message);
         Assert.Equal("Retry rule", vm.RuleEditor.Name); Assert.Equal(65, vm.RuleEditor.Side);
@@ -93,7 +100,8 @@ public sealed partial class StateAndPersistenceTests : IDisposable
     [Fact]
     public void WrittenImageIsSuccessfulEvenIfPreferencesCannotBeSaved() => Ui.Run(async () =>
     {
-        using var vm = Create(BlockedStore()); await vm.InitializeAsync(); await vm.LoadPhotoAsync(Source()); await Until(() => vm.CanExport);
+        var path = BlockedStore(); using var vm = Create(path); await vm.InitializeAsync(); BlockStoreWrites(path);
+        await vm.LoadPhotoAsync(Source()); await Until(() => vm.CanExport);
         var output = Path.Combine(root, "exported.jpg"); await vm.ExportAsync(output);
         using var image = new MagickImage(output); Assert.Equal(1080u, image.Width); Assert.Equal(1080u, image.Height);
         Assert.StartsWith("已匯出：", vm.StatusText); Assert.Contains("無法儲存設定", vm.PersistenceError);

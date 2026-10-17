@@ -37,9 +37,11 @@ public sealed partial class MainWindow
             var preset = ViewModel.MarginRules.Single(rule => rule.Name == "Four ratio QA");
             await ViewModel.RuleEditor.SelectPresetAsync(preset.Id);
             for (var index = 0; index < 4; index++)
+            for (var arrangement = 0; arrangement < 2; arrangement++)
             {
-                ViewModel.RuleEditor.AspectIndex = index; await WaitForDemoAsync(page);
-                Check(ViewModel.RuleEditor.Side == 110 + index, $"Fresh process restores configuration {index}", checks);
+                ViewModel.RuleEditor.AspectIndex = index; ViewModel.RuleEditor.ArrangementIndex = arrangement; await WaitForDemoAsync(page);
+                Check(ViewModel.RuleEditor.Side == 110 + index + arrangement * 20 && ViewModel.RuleEditor.ExposureItemGap == 12 + index + arrangement * 10,
+                    $"Fresh process restores ratio {index}, arrangement {arrangement}, and item spacing", checks);
             }
             await CaptureWindowAsync("aspect-restarted.png");
         }
@@ -55,8 +57,13 @@ public sealed partial class MainWindow
             OpenSettings(SettingsSection.Layout); var page = (SettingsPage)SettingsFrame.Content;
             await WaitForDemoAsync(page);
             var ratio = (ComboBox)page.FindName("ImageAspectSelector"); var side = (Slider)page.FindName("SideMarginSlider");
+            var arrangementSelector = (ComboBox)page.FindName("InformationArrangementSelector");
+            var itemGap = (Slider)page.FindName("ExposureItemGapSlider"); var gapReadout = (TextBlock)page.FindName("ExposureItemGapValue");
             var readout = (TextBlock)page.FindName("SideMarginValue");
             Check(ratio.SelectedIndex == 2 && ratio.Items.Count == 4, "Default native ComboBox is 4:3 with exactly four source ratios", checks);
+            Check(arrangementSelector.Items.Cast<string>().SequenceEqual(new[] { "左右排列", "垂直排列" }) &&
+                  arrangementSelector.TransformToVisual(page).TransformPoint(new Windows.Foundation.Point()).Y > ratio.TransformToVisual(page).TransformPoint(new Windows.Foundation.Point()).Y,
+                "Exactly two native arrangement options immediately below source ratio", checks);
             Check(!ViewModel.HasPhoto && ViewModel.PreviewBytes is null && string.IsNullOrEmpty(ViewModel.Camera) && ViewModel.SelectedDate is null,
                 "Offline demo leaves main source, main preview and actual EXIF empty", checks);
             Check(ViewModel.RuleEditor.PreviewLayout!.IsValid && ViewModel.RuleEditor.PreviewLayout.TextRuns.Count > 0,
@@ -67,8 +74,22 @@ public sealed partial class MainWindow
             await UntilPresetAsync(() => ViewModel.RuleEditor.IsEditMode);
             var original = ViewModel.MarginRules[0];
             for (var index = 0; index < 4; index++)
+            for (var arrangement = 0; arrangement < 2; arrangement++)
+            {
+                ratio.SelectedIndex = index; arrangementSelector.SelectedIndex = arrangement;
+                side.Value = 110 + index + arrangement * 20; itemGap.Value = 12 + index + arrangement * 10;
+                await WaitForDemoAsync(page);
+                Check(gapReadout.Text == $"{12 + index + arrangement * 10} px" && ViewModel.RuleEditor.PreviewLayout!.UsesStackedInfo == (arrangement == 1),
+                    $"Native ratio {index}/arrangement {arrangement} renders independently with visible item-gap value", checks);
+            }
+            arrangementSelector.SelectedIndex = 0;
+            await WaitForDemoAsync(page);
+            AppWindow.Resize(new SizeInt32(1596, 1256)); await Task.Delay(200);
+            await CaptureWindowAsync("eight-configurations-layout.png");
+            for (var index = 0; index < 4; index++)
             {
                 ratio.SelectedIndex = index; await Task.Delay(50);
+                side.Value = 90 + index; await WaitForDemoAsync(page);
                 var before = ViewModel.RuleEditor.PreviewVersion;
                 var peer = FrameworkElementAutomationPeer.CreatePeerForElement(side)!;
                 ((IRangeValueProvider)peer.GetPattern(PatternInterface.RangeValue)).SetValue(110 + index);
@@ -92,13 +113,19 @@ public sealed partial class MainWindow
             ((TextBox)page.FindName("PresetNameBox")).Text = "Four ratio QA";
             // Editing built-in keeps its ID; save-as belongs exclusively to Apply.
             await ViewModel.RuleEditor.ChangeModeAsync(ViewModels.PresetMode.Apply, () => Task.FromResult(true));
-            for (var index = 0; index < 4; index++) { ratio.SelectedIndex = index; side.Value = 110 + index; }
-            ratio.SelectedIndex = 0;
+            for (var index = 0; index < 4; index++)
+            for (var arrangement = 0; arrangement < 2; arrangement++)
+            { ratio.SelectedIndex = index; arrangementSelector.SelectedIndex = arrangement; side.Value = 110 + index + arrangement * 20; itemGap.Value = 12 + index + arrangement * 10; }
+            ratio.SelectedIndex = 0; arrangementSelector.SelectedIndex = 0;
             ((TextBox)page.FindName("PresetNameBox")).Text = "Four ratio QA";
             InvokeButton((Button)page.FindName("SaveRuleButton"));
             await UntilPresetAsync(() => ViewModel.MarginRules.Any(rule => rule.Name == "Four ratio QA") && !ViewModel.RuleEditor.IsSaving);
             var saved = ViewModel.MarginRules.Single(rule => rule.Name == "Four ratio QA");
-            Check(Enum.GetValues<SourceAspect>().All(a => saved.ForAspect(a).Side == 110 + (int)a), "Native Save persists all four configurations in one preset", checks);
+            Check(Enum.GetValues<SourceAspect>().All(a => saved.ForAspect(a, PhotoMargin.Core.Models.InformationArrangement.TwoColumns).Side == 110 + (int)a &&
+                saved.ForAspect(a, PhotoMargin.Core.Models.InformationArrangement.Stacked).Side == 130 + (int)a &&
+                saved.ForAspect(a, PhotoMargin.Core.Models.InformationArrangement.TwoColumns).ExposureItemGap == 12 + (int)a &&
+                saved.ForAspect(a, PhotoMargin.Core.Models.InformationArrangement.Stacked).ExposureItemGap == 22 + (int)a),
+                "Native Save persists all eight configurations and item gaps under one preset ID", checks);
             await WaitForDemoAsync(page); await CaptureWindowAsync("aspect-16x9-dark.png");
             ViewModel.ThemeChoice = 2; await Task.Delay(150); await CaptureWindowAsync("aspect-light.png");
             AppWindow.Resize(new SizeInt32(800, 700)); await Task.Delay(150);
