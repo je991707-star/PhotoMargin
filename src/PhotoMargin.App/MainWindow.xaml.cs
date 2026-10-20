@@ -35,6 +35,7 @@ public sealed partial class MainWindow : Window
             new PhotoMargin.Core.LayoutEngine(new MagickTextMeasurer()), new PreviewService(renderer), new ExportService(renderer), settingsStore);
         InitializeComponent();
         RootGrid.DataContext = ViewModel;
+        StartThemeTracking();
         UpdatePhotoState();
         PhotoDatePicker.MinDate = new DateTimeOffset(1601, 1, 1, 0, 0, 0, TimeSpan.Zero);
         PhotoDatePicker.MaxDate = new DateTimeOffset(9999, 12, 31, 0, 0, 0, TimeSpan.Zero);
@@ -102,8 +103,14 @@ public sealed partial class MainWindow : Window
         if (OutputSizeBox.SelectedIndex == 0) ViewModel.OutputSize = 1080;
         else if (OutputSizeBox.SelectedIndex == 1) ViewModel.OutputSize = 2048;
     }
-    private void ApplyTheme() => RootGrid.RequestedTheme = (ThemePreference)ViewModel.ThemeChoice switch
-    { ThemePreference.Dark => ElementTheme.Dark, ThemePreference.Light => ElementTheme.Light, _ => ElementTheme.Default };
+    private void ApplyTheme()
+    {
+        var foreground = systemColors.GetColorValue(Windows.UI.ViewManagement.UIColorType.Foreground);
+        var systemDark = 5 * foreground.G + 2 * foreground.R + foreground.B > 8 * 128;
+        RootGrid.RequestedTheme = (ThemePreference)ViewModel.ThemeChoice switch
+        { ThemePreference.Dark => ElementTheme.Dark, ThemePreference.Light => ElementTheme.Light, _ => systemDark ? ElementTheme.Dark : ElementTheme.Light };
+        SynchronizeThemeChrome();
+    }
     private void UpdatePhotoState()
     {
         var hasPhoto = ViewModel.HasPhoto;
@@ -137,7 +144,7 @@ public sealed partial class MainWindow : Window
     private void AddRule_Click(object sender, RoutedEventArgs e) { settingsOrigin = AddRuleButton; OpenSettings(SettingsSection.Layout); }
     internal void OpenSettings(SettingsSection section)
     {
-        var page = new SettingsPage(ViewModel, section);
+        var page = new SettingsPage(ViewModel, section, dialogs);
         page.BackRequested += Settings_BackRequested;
         SettingsFrame.Content = page; WorkspaceGrid.Visibility = Visibility.Collapsed; SettingsFrame.Visibility = Visibility.Visible;
     }
@@ -163,17 +170,19 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = RootGrid.XamlRoot, Title = "重新讀取照片資訊？",
-            Content = "是否以來源照片資訊覆蓋手動修改的機身、鏡頭、拍攝時間與拍攝參數？版面與輸出設定不會改變。",
+            Content = "從作品照片重新讀取 EXIF，並取代手動修改的機身、鏡頭、日期時間與拍攝參數。已確認補入的 RAW 欄位及快照會保留；版面與輸出設定不會改變。",
             PrimaryButtonText = "覆蓋並重新讀取", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close
         };
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
     }
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
-        if (!ViewModel.CanExport) return;
-        var name = ViewModel.SourcePath is null ? "PhotoMargin" : Path.GetFileNameWithoutExtension(ViewModel.SourcePath);
-        var path = await dialogs.PickOutputAsync($"{name}_margin");
-        if (path is not null) await ViewModel.ExportAsync(path);
+        await ViewModel.ExportWithDialogsAsync(dialogs.PickOutputAsync, async path =>
+        {
+            var dialog = new ContentDialog { XamlRoot = RootGrid.XamlRoot, RequestedTheme = RootGrid.ActualTheme,
+                Title = "覆寫同名檔案？", Content = Path.GetFileName(path), PrimaryButtonText = "覆寫", CloseButtonText = "取消", DefaultButton = ContentDialogButton.Close };
+            return await dialog.ShowAsync() == ContentDialogResult.Primary;
+        }, dialogs.OpenDirectoryAsync);
     }
     private void Preview_DragOver(object sender, DragEventArgs e)
     {
@@ -212,7 +221,7 @@ public sealed partial class MainWindow : Window
         catch (Exception) when (closed || version != bitmapVersion) { }
     }
     private void MainWindow_Closed(object sender, WindowEventArgs args)
-    { closed = true; bitmapVersion++; ViewModel.PropertyChanged -= ViewModel_PropertyChanged; sizingConstraints.Dispose(); ViewModel.Dispose(); }
+    { closed = true; bitmapVersion++; StopThemeTracking(); ViewModel.PropertyChanged -= ViewModel_PropertyChanged; sizingConstraints.Dispose(); ViewModel.Dispose(); }
 
     private void MainWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {

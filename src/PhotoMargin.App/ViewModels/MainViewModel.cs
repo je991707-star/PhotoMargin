@@ -13,7 +13,7 @@ namespace PhotoMargin.App.ViewModels;
 
 public sealed record ArrangementChoice(InformationArrangement Value, string Name);
 
-public sealed class MainViewModel : ObservableObject, IDisposable
+public sealed partial class MainViewModel : ObservableObject, IDisposable
 {
     private readonly ImageLoader imageLoader;
     private readonly LayoutEngine layoutEngine;
@@ -73,11 +73,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private byte[]? previewBytes;
 
     public MainViewModel(ImageLoader imageLoader, LayoutEngine layoutEngine, PreviewService previewService,
-        ExportService exportService, SettingsStore settingsStore)
+        ExportService exportService, SettingsStore settingsStore, IRawMetadataReader? rawMetadataReader = null)
     {
         this.imageLoader = imageLoader; this.layoutEngine = layoutEngine; this.previewService = previewService;
         this.exportService = exportService; this.settingsStore = settingsStore;
+        this.rawMetadataReader = rawMetadataReader ?? new RawMetadataReader();
         RuleEditor = new RuleEditorViewModel(this);
+        PropertyChanged += (_, e) => { if (e.PropertyName is nameof(SourcePath) or nameof(SelectedDate)) OnPropertyChanged(nameof(FileNameExample)); };
     }
     public ObservableCollection<MarginRule> MarginRules { get; } = [];
     public RuleEditorViewModel RuleEditor { get; }
@@ -118,6 +120,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var valid = numeric.Length == 0 || (parts.Length == 1 && PositiveNumber(parts[0])) ||
                 (parts.Length == 2 && PositiveNumber(parts[0]) && PositiveNumber(parts[1]));
             InputError = valid ? "" : "快門請輸入有效秒數或分數，例如 0.8、1/250。";
+            if (!valid && !applyingValues) MarkInformationManual(nameof(ShutterInput));
             if (valid) Shutter = numeric.Length == 0 ? "" : numeric + "s";
         }
     }
@@ -125,8 +128,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     public DateTimeOffset? SelectedDate { get => selectedDate; set { if (SetProperty(ref selectedDate, value)) InformationChanged(); } }
     public TimeSpan? SelectedTime { get => selectedTime; set { if (SetProperty(ref selectedTime, value)) InformationChanged(); } }
     public string CaptureTimeSource { get => captureTimeSource; private set => SetProperty(ref captureTimeSource, value); }
-    public int OutputSize { get => outputSize; set => SetLayout(ref outputSize, Math.Clamp(value, 320, 8192)); }
-    public double JpegQuality { get => jpegQuality; set => SetLayout(ref jpegQuality, Finite(value, 95, 50, 100)); }
+    public int OutputSize { get => outputSize; set { SetLayout(ref outputSize, Math.Clamp(value, 320, 8192)); NotifyExport(); } }
+    public double JpegQuality { get => jpegQuality; set { if (SetProperty(ref jpegQuality, Finite(value, 95, 1, 100))) { exportPreferences = exportPreferences with { JpegQuality = (int)Math.Round(jpegQuality) }; NotifyExport(); if (!applyingValues) _ = SaveSettingsQuietlyAsync(); } } }
     public double PrimaryFontSize { get => primaryFontSize; set => SetLayout(ref primaryFontSize, Finite(value, 28, 18, 100)); }
     public double LensFontSize
     {
@@ -191,25 +194,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var rule = MarginRules.FirstOrDefault(item => item.Id == value);
             if (value is not null && rule is null) return;
             if (!SetProperty(ref selectedMarginRuleId, value)) return;
-            if (rule is not null) ApplyRule(rule.ForAspect(WorkAspect, Arrangement).ToRule());
+            if (rule is not null && !applyingValues) ApplyRule(rule.ForAspect(WorkAspect, Arrangement).ToRule());
             if (!applyingValues) { RequestPreview(); _ = SaveSettingsQuietlyAsync(); }
         }
     }
     public int ThemeChoice
     {
         get => themeChoice;
-        set { if (SetProperty(ref themeChoice, Math.Clamp(value, 0, 2)) && !applyingValues) _ = SaveSettingsQuietlyAsync(); }
+        set { if (SetProperty(ref themeChoice, Math.Clamp(value, 0, 2))) { OnPropertyChanged(nameof(ColorModeIndex)); if (!applyingValues) _ = SaveSettingsQuietlyAsync(); } }
     }
     public bool IsBusy
     {
         get => isBusy;
-        private set { if (SetProperty(ref isBusy, value)) { OnPropertyChanged(nameof(CanExport)); OnPropertyChanged(nameof(CanReload)); OnPropertyChanged(nameof(CanSelectPhoto)); } }
+        private set { if (SetProperty(ref isBusy, value)) { OnPropertyChanged(nameof(CanManageData)); OnPropertyChanged(nameof(CanExport)); OnPropertyChanged(nameof(CanReload)); OnPropertyChanged(nameof(CanSelectPhoto)); OnPropertyChanged(nameof(CanReadRaw)); OnPropertyChanged(nameof(CanReloadRaw)); OnPropertyChanged(nameof(CanRestorePhotoExif)); } }
     }
-    public bool CanSelectPhoto => !IsBusy;
-    public bool CanReload => HasPhoto && !IsBusy;
-    public bool CanExport => HasPhoto && currentLayout?.IsValid is true && !IsBusy && InputError.Length == 0;
+    public bool CanSelectPhoto => !IsBusy && !IsDataBusy;
+    public bool CanReload => HasPhoto && !IsBusy && !IsRawReading && !IsDataBusy;
+    public bool CanExport => HasPhoto && currentLayout?.IsValid is true && !IsBusy && !IsRawReading && !IsDataBusy && InputError.Length == 0;
     public bool HasPhoto => photo is not null;
-    public bool HasInformationOverrides => GetDisplayMetadata() != originalDisplay || InputError.Length > 0;
+    public bool HasInformationOverrides => GetDisplayMetadata() != originalDisplay || InputError.Length > 0 ||
+        informationOrigins.Values.Any(origin => origin is InformationOrigin.Raw or InformationOrigin.Manual);
     public string? SourcePath => photo?.SourcePath;
     public string SourceFileName => photo is null ? "尚未匯入照片" : Path.GetFileName(photo.SourcePath);
     public string SourceFileSizeText { get; private set; } = "";
@@ -248,11 +252,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 SetPersistenceError(exception.Message); return false;
             }
             persisted = loaded;
+            importedLayoutDefaults = persisted.WorkLayout is not null ? persisted.Layout : null;
             lastOutputDirectory = persisted.LastOutputDirectory;
+            exportPreferences = (persisted.Export ?? new ExportPreferences { JpegQuality = persisted.Layout.JpegQuality, Directory = lastOutputDirectory }).Validate();
             demonstrationAspect = persisted.DemonstrationAspect;
             demonstrationArrangement = persisted.DemonstrationArrangement ?? InformationArrangement.TwoColumns;
+            pendingInformation = persisted.WorkInformation;
             var layout = persisted.Layout.Validate(); applyingValues = true;
-            OutputSize = layout.OutputSize; JpegQuality = layout.JpegQuality;
+            OutputSize = layout.OutputSize; JpegQuality = exportPreferences.JpegQuality; NotifyExport();
             PrimaryFontSize = layout.PrimaryFontSize; SecondaryFontSize = layout.SecondaryFontSize;
             LensFontSize = layout.LensFontSize; DateFontSize = layout.DateFontSize; FontFamily = layout.FontFamily;
             Arrangement = layout.Arrangement;
@@ -263,7 +270,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             // Work is a persisted value snapshot, not a live link back to a selected preset.
             ApplyRule(MarginRule.FromLayout(layout));
             settingsLoaded = true; settingsLoadFailed = false;
-            OnPropertyChanged(nameof(IsSettingsReadOnly)); OnPropertyChanged(nameof(HasSettingsLoadFailure));
+            OnPropertyChanged(nameof(IsSettingsReadOnly)); OnPropertyChanged(nameof(HasSettingsLoadFailure)); OnPropertyChanged(nameof(CanManageData));
+            DataStatus = settingsStore.DataNotice;
             SetPersistenceError("");
             OnPropertyChanged(nameof(SelectedMarginRuleId)); applyingValues = false; RuleEditor.Begin(selectedMarginRuleId);
             RequestPreview(); return true;
@@ -272,7 +280,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     }
     public async Task LoadPhotoAsync(string path)
     {
-        if (IsBusy || disposed) return;
+        if (IsBusy || IsDataBusy || disposed) return;
         IsBusy = true; ErrorText = ""; StatusText = "正在讀取照片與 EXIF…";
         LoadedPhoto? candidate = null;
         try
@@ -294,12 +302,16 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 if (workIsUnmodifiedPresetCopy)
                     ApplyRule(selectedPreset!.ForAspect(WorkAspect, Arrangement).ToRule());
                 sourceVersion++; currentLayout = null; PreviewBytes = null; SetPreviewError(""); SetArrangementWarning("");
-                ApplyPhotoInformation(photo.Metadata, captured); UpdateSourceSummary(photo.Metadata);
+                ResetRawAssociation();
+                ApplyPhotoInformation(photo.Metadata, captured);
+                RestoreWorkInformation(photo.SourcePath);
+                UpdateSourceSummary(photo.Metadata);
                 SourceFileSizeText = bytes >= 1048576 ? $"{bytes / 1048576d:0.##} MB" : $"{bytes / 1024d:0.#} KB";
                 foreach (var property in new[] { nameof(HasPhoto), nameof(SourcePath), nameof(SourceFileName), nameof(SourceFileSizeText), nameof(CanReload), nameof(CanExport) }) OnPropertyChanged(property);
+                NotifyInformationSources();
             }
             finally { renderGate.Release(); }
-            StatusText = captured.Fallback ? "拍攝時間使用檔案建立日期" : ""; RequestPreview(true);
+            StatusText = captured.Fallback ? "拍攝時間使用檔案建立日期" : ""; RequestPreview(true); _ = SaveSettingsQuietlyAsync();
         }
         catch (OperationCanceledException) { }
         catch (Exception exception) when (exception is IOException or InvalidDataException or NotSupportedException or UnauthorizedAccessException)
@@ -323,42 +335,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             if (disposed || source != sourceVersion) return false;
             if (informationRevision != informationVersion)
             { StatusText = "讀取期間資訊已變更，保留目前編輯；請再次重新讀取。"; return false; }
-            ApplyPhotoInformation(result.Metadata, result.Captured); UpdateSourceSummary(result.Metadata); ErrorText = "";
-            StatusText = result.Metadata == new PhotoMetadata() ? "缺值留白；拍攝時間使用檔案建立日期" :
+            ApplyPhotoInformation(result.Metadata, result.Captured); ReapplyRawInformation();
+            UpdateSourceSummary(result.Metadata); ErrorText = "";
+            StatusText = confirmedRaw is not null ? "照片 EXIF 已重新讀取；已保留 RAW 補入的欄位與快照。" :
+                result.Metadata == new PhotoMetadata() ? "缺值留白；拍攝時間使用檔案建立日期" :
                 result.Captured.Fallback ? "照片資訊已更新；拍攝時間使用檔案建立日期" : "照片資訊已更新";
-            RequestPreview(true); return true;
+            RequestPreview(true); _ = SaveSettingsQuietlyAsync(); return true;
         }
         catch (OperationCanceledException) { return false; }
         catch (Exception exception)
         { if (!disposed) { ErrorText = $"重新讀取失敗，保留原有資訊：{exception.Message}"; StatusText = ""; } return false; }
         finally { if (!disposed) IsBusy = false; }
     }
-    public async Task ExportAsync(string destinationPath)
-    {
-        if (!CanExport || disposed) return;
-        var layout = currentLayout!; var quality = (int)Math.Round(JpegQuality);
-        IsBusy = true; ErrorText = ""; StatusText = "正在匯出 JPG…";
-        try
-        {
-            await renderGate.WaitAsync(lifetime.Token);
-            try { await exportService.ExportJpegAsync(photo!, layout, destinationPath, quality, lifetime.Token); }
-            finally { renderGate.Release(); }
-            StatusText = $"已匯出：{Path.GetFileName(destinationPath)}";
-            lastOutputDirectory = Path.GetDirectoryName(destinationPath);
-            // The image is already committed. Preference failure is a separate warning,
-            // never a failed export or a reason to retry writing the same image.
-            await SaveSettingsQuietlyAsync();
-        }
-        catch (OperationCanceledException) { }
-        catch (Exception exception) { if (!disposed) { ErrorText = exception.Message; StatusText = "匯出失敗"; } }
-        finally { if (!disposed) IsBusy = false; }
-    }
+    public Task ExportAsync(string destinationPath) => RunExportAsync(destinationPath);
     internal async Task<bool> SaveRuleAsync(MarginRule rule, MarginRule? expectedOriginal)
     {
         await preferenceGate.WaitAsync();
         try
         {
-            if (!RuleEditor.AuthorizesSave(rule.Id, expectedOriginal)) return false;
+            if (IsDataBusy && !savingDraftForImport || !RuleEditor.AuthorizesSave(rule.Id, expectedOriginal)) return false;
             var index = MarginRules.ToList().FindIndex(item => item.Id == rule.Id);
             if ((expectedOriginal is null && index >= 0) || (expectedOriginal is not null && (index < 0 || MarginRules[index] != expectedOriginal))) return false;
             if (MarginRules.Any(item => item.Id != rule.Id && string.Equals(item.Name, rule.Name, StringComparison.OrdinalIgnoreCase))) return false;
@@ -379,7 +374,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         try
         {
             var rule = MarginRules.FirstOrDefault(item => item.Id == id);
-            if (rule is null || id == MarginRule.DefaultId || !RuleEditor.AuthorizesDeletion(rule)) return false;
+            if (IsDataBusy || rule is null || id == MarginRule.DefaultId || !RuleEditor.AuthorizesDeletion(rule)) return false;
             var rules = MarginRules.Where(item => item.Id != id).Select(item => item with { }).ToList();
             var selected = selectedMarginRuleId == id ? rules.FirstOrDefault()?.Id : selectedMarginRuleId;
             var snapshot = BuildPersisted() with { MarginRules = rules, SelectedMarginRuleId = selected };
@@ -448,9 +443,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         finally { demoGate.Release(); }
     }
     private bool SetInformation(ref string field, string value, [CallerMemberName] string? name = null)
-    { if (!SetProperty(ref field, value ?? "", name)) return false; InformationChanged(); return true; }
-    private void InformationChanged()
-    { if (!applyingValues) { informationVersion++; OnPropertyChanged(nameof(HasInformationOverrides)); RequestPreview(); } }
+    { if (!SetProperty(ref field, value ?? "", name)) return false; InformationChanged(name); return true; }
+    private void InformationChanged([CallerMemberName] string? property = null)
+    {
+        if (applyingValues) return;
+        MarkInformationManual(property); informationVersion++; OnPropertyChanged(nameof(HasInformationOverrides));
+        RequestPreview(); RuleEditor.RefreshPreview(); _ = SaveSettingsQuietlyAsync();
+    }
     private void SetLayout<T>(ref T field, T value, [CallerMemberName] string? name = null)
     { if (SetProperty(ref field, value, name) && !applyingValues) { RequestPreview(); _ = SaveSettingsQuietlyAsync(); } }
     private void RequestPreview(bool immediate = false)
@@ -520,20 +519,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         metadata.CapturedAt is { } captured ? (captured, false, metadata.DateSource ?? "EXIF") : (new DateTimeOffset(File.GetCreationTime(path)), true, "檔案建立日期");
     private void ApplyPhotoInformation(PhotoMetadata metadata, (DateTimeOffset Time, bool Fallback, string Source) capture)
     {
+        photoCapture = capture;
         applyingValues = true; Camera = metadata.CameraDisplay; Lens = metadata.LensModel ?? "";
         FocalLength = metadata.FocalLengthDisplay; Aperture = metadata.ApertureDisplay; Shutter = metadata.ShutterDisplay; Iso = metadata.IsoDisplay;
         shutterInput = shutter.TrimEnd('s', 'S').Trim(); OnPropertyChanged(nameof(ShutterInput)); InputError = "";
         SelectedDate = capture.Time; SelectedTime = new TimeSpan(capture.Time.Hour, capture.Time.Minute, 0);
         CaptureTimeSource = capture.Source; originalDisplay = GetDisplayMetadata(); applyingValues = false;
+        photoExif = metadata;
+        ResetPhotoOrigins(capture.Fallback);
         OnPropertyChanged(nameof(HasInformationOverrides));
     }
     private void UpdateSourceSummary(PhotoMetadata metadata) => SourceSummary = photo is null ? "尚未載入照片" :
         $"{photo.OrientedSize.Width:0} × {photo.OrientedSize.Height:0} · {(photo.Orientation == SourceOrientation.Landscape ? "橫向" : "方形")} · {(metadata == new PhotoMetadata() ? "無 EXIF" : "EXIF 已載入")}";
     private PersistedSettings BuildPersisted() => new()
     {
-        Layout = BuildLayoutSettings(), ShowGuides = ShowGuides, Theme = (ThemePreference)ThemeChoice,
-        LastOutputDirectory = lastOutputDirectory, MarginRules = MarginRules.Select(rule => rule with { }).ToList(),
-        SelectedMarginRuleId = SelectedMarginRuleId, DemonstrationAspect = demonstrationAspect, DemonstrationArrangement = demonstrationArrangement
+        Layout = importedLayoutDefaults is { } defaults ? defaults with { OutputSize = OutputSize, JpegQuality = (int)Math.Round(JpegQuality) } : BuildLayoutSettings(),
+        WorkLayout = importedLayoutDefaults is not null ? HasPhoto ? BuildLayoutSettings() : persisted.WorkLayout : null,
+        ShowGuides = ShowGuides, Theme = (ThemePreference)ThemeChoice,
+        Export = exportPreferences with { Directory = exportPreferences.RememberLocation ? exportPreferences.Directory : null },
+        LastOutputDirectory = exportPreferences.RememberLocation ? exportPreferences.Directory : null, MarginRules = MarginRules.Select(rule => rule with { }).ToList(),
+        SelectedMarginRuleId = SelectedMarginRuleId, DemonstrationAspect = demonstrationAspect, DemonstrationArrangement = demonstrationArrangement,
+        WorkInformation = CaptureWorkInformation()
     };
     private async Task<bool> SaveSettingsQuietlyAsync()
     {

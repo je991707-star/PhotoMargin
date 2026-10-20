@@ -7,6 +7,32 @@ namespace PhotoMargin.App.LogicTests;
 
 public sealed partial class StateAndPersistenceTests
 {
+    [Fact]
+    public void DeletedMigrationBackupDoesNotReturnOrChangeWorkOnRestart() => Ui.Run(async () =>
+    {
+        var path = Path.Combine(root, "deleted-migration-backup.json");
+        var old = new MarginRule { Bottom = 50, BuiltInRevision = 1 }.Validate();
+        var custom = new MarginRule { Id = "keep", Name = "User preset", Side = 93 }.Validate();
+        await new SettingsStore(path).SaveAsync(new() { MarginRules = [old, custom],
+            SelectedMarginRuleId = custom.Id, Layout = new() { BottomSafeDistance = 17 } });
+        using var vm = Create(path); await vm.InitializeAsync();
+        var backup = vm.MarginRules.Single(rule => rule.Name == "預設規則（更新前備份）");
+        var current = vm.MarginRules.Single(rule => rule.Id == MarginRule.DefaultId);
+        await vm.RuleEditor.ChangeModeAsync(ViewModels.PresetMode.Edit);
+        await vm.RuleEditor.SelectPresetAsync(backup.Id);
+        var request = vm.RuleEditor.BeginDeletion()!; request.Acknowledged = true;
+        Assert.True(await vm.RuleEditor.DeleteAsync(request));
+        Assert.Equal(17, vm.BottomSafeDistance);
+        await vm.FlushSettingsAsync();
+        using var restored = Create(path); await restored.InitializeAsync();
+        Assert.Equal(2, restored.MarginRules.Count);
+        Assert.Equal(current, restored.MarginRules.Single(rule => rule.Id == MarginRule.DefaultId));
+        Assert.Equal(custom, restored.MarginRules.Single(rule => rule.Id == custom.Id));
+        Assert.DoesNotContain(restored.MarginRules, rule => rule.Id == backup.Id);
+        Assert.Equal(custom.Id, restored.SelectedMarginRuleId);
+        Assert.Equal(17, restored.BottomSafeDistance);
+    });
+
     [Theory]
     [InlineData(false)] [InlineData(true)]
     public void RevisionOneSavedCatalogIsRepairedOnceWithAnIndependentBackup(bool manualWork) => Ui.Run(async () =>

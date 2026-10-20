@@ -1,0 +1,23 @@
+{
+  "id": "default",
+  "name": "預設規則",
+  "builtInRevision": 2,
+  "arrangements": {
+    "sixteenByNine": {
+      "twoColumns": { "side": 40, "top": 100, "bottom": 170, "gap": 50, "exposureItemGap": 18, "extra": 24 },
+      "stacked": { "side": 40, "top": 100, "bottom": 150, "gap": 50, "exposureItemGap": 20, "extra": 24 }
+    },
+    "fiveByFour": {
+      "twoColumns": { "side": 48, "top": 50, "bottom": 90, "gap": 50, "exposureItemGap": 18, "extra": 24 },
+      "stacked": { "side": 48, "top": 50, "bottom": 70, "gap": 50, "exposureItemGap": 20, "extra": 24 }
+    },
+    "fourByThree": {
+      "twoColumns": { "side": 48, "top": 100, "bottom": 112, "gap": 50, "exposureItemGap": 18, "extra": 24 },
+      "stacked": { "side": 48, "top": 100, "bottom": 100, "gap": 32, "exposureItemGap": 20, "extra": 24 }
+    },
+    "threeByTwo": {
+      "twoColumns": { "side": 48, "top": 100, "bottom": 136, "gap": 50, "exposureItemGap": 18, "extra": 24 },
+      "stacked": { "side": 48, "top": 100, "bottom": 106, "gap": 50, "exposureItemGap": 18, "extra": 24 }
+    }
+  }
+}

@@ -71,25 +71,28 @@
                 <Grid Grid.Column="1" RowSpacing="16">
                     <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <ScrollViewer x:Name="SettingsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
-                        <ContentControl x:Name="SidebarSettingsHost" IsEnabled="{Binding HasPhoto}" IsTabStop="False"
-                                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top">
                         <StackPanel x:Name="SidebarContent" Spacing="12" Margin="0,8,12,0">
                             <TextBlock Text="預覽與輸出" Style="{StaticResource SectionTitleStyle}" />
                             <CheckBox x:Name="GuidesCheckBox" Content="顯示裁切與安全線" IsChecked="{Binding ShowGuides, Mode=TwoWay}" />
+                            <ComboBox x:Name="MainExportFormatBox" Header="輸出格式" HorizontalAlignment="Stretch" ItemsSource="{Binding ExportFormats}" SelectedIndex="{Binding ExportFormatIndex, Mode=TwoWay}" />
                             <Grid ColumnSpacing="24">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="120" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                <ComboBox x:Name="OutputSizeBox" Header="顯示尺寸" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="OutputSize_SelectionChanged">
+                                <ComboBox x:Name="OutputSizeBox" Header="輸出尺寸" HorizontalAlignment="Stretch" SelectedIndex="0" SelectionChanged="OutputSize_SelectionChanged">
                                     <ComboBoxItem Content="1080" /><ComboBoxItem Content="2048" /><ComboBoxItem Content="自訂" />
                                 </ComboBox>
                                 <StackPanel Grid.Column="1" Spacing="6">
-                                    <TextBlock Text="JPG 品質" />
-                                    <Slider x:Name="JpegQualitySlider" AutomationProperties.Name="JPG 品質" Minimum="50" Maximum="100" StepFrequency="1"
-                                            TickFrequency="5" TickPlacement="BottomRight" Value="{Binding JpegQuality, Mode=TwoWay}" />
+                                    <Grid><TextBlock Text="品質" /><TextBlock Text="{Binding ExportQualityText}" HorizontalAlignment="Right" /></Grid>
+                                    <Slider x:Name="JpegQualitySlider" AutomationProperties.Name="品質" Minimum="1" Maximum="100" StepFrequency="1"
+                                            Visibility="{Binding ShowExportQuality, Converter={StaticResource BoolVisibility}}"
+                                            TickFrequency="10" TickPlacement="BottomRight" Value="{Binding ExportQuality, Mode=TwoWay}" />
+                                    <TextBlock Text="無損" Margin="0,8" Visibility="{Binding ShowExportLossless, Converter={StaticResource BoolVisibility}}" />
                                 </StackPanel>
                             </Grid>
                             <NumberBox x:Name="CustomOutputSizeBox" Header="自訂正方形尺寸（px）" Visibility="Collapsed" Minimum="320" Maximum="8192"
                                        Value="{Binding OutputSize, Mode=TwoWay}" />
                             <Rectangle Height="1" Fill="{ThemeResource SectionDividerBrush}" Margin="0,2" />
+                            <ContentControl x:Name="SidebarSettingsHost" IsEnabled="{Binding HasPhoto}" IsTabStop="False" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Top">
+                            <StackPanel Spacing="12">
                             <TextBlock Text="照片版面" Style="{StaticResource SectionTitleStyle}" />
                             <Grid ColumnSpacing="8">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="120" /></Grid.ColumnDefinitions>
@@ -128,11 +131,11 @@
                             <Grid>
                                 <TextBlock Text="照片資訊" Style="{StaticResource SectionTitleStyle}" VerticalAlignment="Center" />
                                 <Button x:Name="ReloadExifButton" HorizontalAlignment="Right" Padding="8" Background="Transparent" BorderThickness="0"
-                                        Click="ReloadExif_Click" IsEnabled="{Binding CanReload}" ToolTipService.ToolTip="重新讀取照片資訊"
+                                        Click="ReloadExif_Click" IsEnabled="{Binding CanReload}" ToolTipService.ToolTip="從作品照片重新讀取資訊；保留已確認的 RAW 補入"
                                         AutomationProperties.Name="重新讀取照片資訊"><SymbolIcon Symbol="Refresh" /></Button>
                             </Grid>
-                            <TextBox x:Name="CameraTextBox" Header="機身" Text="{Binding Camera, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBox x:Name="LensTextBox" Header="鏡頭" Text="{Binding Lens, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox x:Name="CameraTextBox" Header="機身" ToolTipService.ToolTip="{Binding CameraInformationSource}" Text="{Binding Camera, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox x:Name="LensTextBox" Header="鏡頭" ToolTipService.ToolTip="{Binding LensInformationSource}" Text="{Binding Lens, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             <StackPanel Spacing="8">
                                 <TextBlock Text="拍攝時間" />
                                 <Grid ColumnSpacing="16">
@@ -151,8 +154,9 @@
                                 <TextBox x:Name="ShutterTextBox" Grid.Column="2" Header="快門 s" MinWidth="0" Text="{Binding ShutterInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 <NumberBox x:Name="IsoBox" Grid.Column="3" Header="ISO" MinWidth="0" Minimum="0" Maximum="10000000" SmallChange="100" Value="{Binding IsoValue, Mode=TwoWay}" />
                             </Grid>
-                        </StackPanel>
+                            </StackPanel>
                         </ContentControl>
+                        </StackPanel>
                     </ScrollViewer>
                     <StackPanel x:Name="PhotoActions" Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,0,12,8">
                         <Button x:Name="ChangePhotoButton" Click="ChangePhoto_Click" IsEnabled="{Binding CanSelectPhoto}" Visibility="Collapsed" ToolTipService.ToolTip="選擇或更換照片">
@@ -165,13 +169,14 @@
                 </Grid>
             </Grid>
             <Grid Grid.Row="2" Background="{ThemeResource StatusBackgroundBrush}" Padding="16,12" ColumnSpacing="16">
-                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                 <Grid ColumnSpacing="12" HorizontalAlignment="Left">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding SourceFileName}" TextTrimming="CharacterEllipsis" MaxWidth="300" FontSize="14" HorizontalAlignment="Left" />
                     <TextBlock Grid.Column="1" Text="{Binding SourceFileSizeText}" FontSize="14" />
                 </Grid>
-                <TextBlock Grid.Column="1" Text="{Binding ApplicationIdentity}" FontSize="14" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding StatusText}" HorizontalAlignment="Right" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" FontSize="12" AutomationProperties.LiveSetting="Polite" ToolTipService.ToolTip="{Binding StatusText}" />
+                <TextBlock Grid.Column="2" Text="{Binding ApplicationIdentity}" FontSize="14" VerticalAlignment="Center" />
             </Grid>
         </Grid>
         <Frame x:Name="SettingsFrame" Visibility="Collapsed" />

@@ -26,25 +26,104 @@
         <NavigationView.MenuItems>
             <NavigationViewItem x:Name="GeneralItem" Content="一般設定" Tag="General"><NavigationViewItem.Icon><SymbolIcon Symbol="Setting" /></NavigationViewItem.Icon></NavigationViewItem>
             <NavigationViewItem x:Name="LayoutItem" Content="版面設定" Tag="Layout"><NavigationViewItem.Icon><SymbolIcon Symbol="Page" /></NavigationViewItem.Icon></NavigationViewItem>
+            <NavigationViewItem x:Name="CameraItem" Content="相機資訊設定" Tag="Camera"><NavigationViewItem.Icon><SymbolIcon Symbol="Camera" /></NavigationViewItem.Icon></NavigationViewItem>
             <NavigationViewItem x:Name="ExportItem" Content="匯出設定" Tag="Export"><NavigationViewItem.Icon><SymbolIcon Symbol="Save" /></NavigationViewItem.Icon></NavigationViewItem>
         </NavigationView.MenuItems>
         <Border Background="{ThemeResource SettingsSurfaceBrush}" CornerRadius="4,0,0,0" Margin="0,8,0,0">
             <Grid>
-            <ScrollViewer x:Name="CommonSettingsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,24,24,16" HorizontalContentAlignment="Stretch">
+            <ScrollViewer x:Name="CommonSettingsScrollViewer" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24,24,24,16" HorizontalContentAlignment="Stretch" SizeChanged="CommonSettingsScroller_SizeChanged">
                 <Grid x:Name="SettingsContentHost">
-                <Grid Width="{Binding ActualWidth, ElementName=SettingsContentHost}" MaxWidth="720" HorizontalAlignment="Left">
+                <Grid x:Name="CommonSettingsBody" MaxWidth="720" HorizontalAlignment="Left">
                     <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <StackPanel x:Name="GeneralContent" Spacing="20">
                         <TextBlock Text="一般設定" Style="{ThemeResource TitleTextBlockStyle}" />
-                        <RadioButtons x:Name="ThemeOptions" Header="主題" MaxColumns="1" SelectedIndex="{Binding ThemeChoice, Mode=TwoWay}">
-                            <x:String>系統預設</x:String><x:String>深色</x:String><x:String>淺色</x:String>
-                        </RadioButtons>
+                        <ComboBox x:Name="ThemeOptions" Header="色彩模式" HorizontalAlignment="Stretch" ItemsSource="{Binding ColorModes}" SelectedIndex="{Binding ColorModeIndex, Mode=TwoWay}" IsEnabled="{Binding CanManageData}" />
+                        <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <TextBlock Text="資料與設定" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox x:Name="DataLocationText" Header="資料位置" Text="{Binding DataDirectory, Mode=OneWay}" IsReadOnly="True" ToolTipService.ToolTip="{Binding DataDirectory}" />
+                            <Button Grid.Column="1" Content="開啟資料夾" VerticalAlignment="Bottom" Click="OpenDataFolder_Click" IsEnabled="{Binding CanManageData}" />
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button x:Name="ExportSettingsBundleButton" Content="匯出設定集" Click="ExportSettingsBundle_Click" IsEnabled="{Binding CanManageData}" />
+                            <Button x:Name="ImportSettingsBundleButton" Content="匯入設定集" Click="ImportSettingsBundle_Click" IsEnabled="{Binding CanManageData}" />
+                            <ProgressRing Width="24" Height="24" IsActive="{Binding IsDataBusy}" AutomationProperties.Name="正在處理設定集" />
+                        </StackPanel>
+                        <TextBlock Text="備份或移轉個人設定與預設。" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DataStatusText" Text="{Binding DataStatus}" TextTrimming="CharacterEllipsis" ToolTipService.ToolTip="{Binding DataStatus}" AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                    <StackPanel x:Name="CameraContent" Spacing="16" Visibility="Collapsed">
+                        <TextBlock Text="相機資訊設定" Style="{ThemeResource TitleTextBlockStyle}" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                        <Button x:Name="ReadRawInformationButton" Content="從 RAW 檔讀取 EXIF" Click="ReadRawInformation_Click" IsEnabled="{Binding CanReadRaw}" Style="{ThemeResource AccentButtonStyle}"
+                                ToolTipService.ToolTip="匯入修圖前RAW檔，補充缺失資訊" AutomationProperties.Name="從 RAW 檔讀取 EXIF" />
+                        <ProgressRing IsActive="{Binding IsRawReading}" Width="24" Height="24" HorizontalAlignment="Left" AutomationProperties.Name="正在讀取 RAW 拍攝資訊" />
+                        </StackPanel>
+                        <TextBlock x:Name="AppliedInformationFileText" Text="{Binding RawSourceDescription}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <StackPanel x:Name="RawActionButtons" Orientation="Horizontal" Spacing="12" SizeChanged="RawActions_SizeChanged">
+                            <Button x:Name="ReloadRawInformationButton" Content="重新讀取 RAW 檔 EXIF" Click="ReloadRawInformation_Click" IsEnabled="{Binding CanReloadRaw}" Style="{ThemeResource AccentButtonStyle}"
+                                    HorizontalAlignment="Left" ToolTipService.ToolTip="重新讀取目前RAW檔" AutomationProperties.Name="重新讀取 RAW 檔 EXIF" />
+                            <Button x:Name="RestorePhotoExifButton" Content="{Binding RestorePhotoExifLabel}" Click="RestorePhotoExif_Click" IsEnabled="{Binding CanRestorePhotoExif}"
+                                    HorizontalAlignment="Left" ToolTipService.ToolTip="還原作品照片原本的 EXIF" AutomationProperties.Name="{Binding RestorePhotoExifLabel}" />
+                        </StackPanel>
+                        <StackPanel Spacing="12" Margin="0,12,0,0">
+                            <TextBlock Text="目前拍攝資訊" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="90" /><ColumnDefinition Width="*" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
+                                <TextBlock Text="欄位" FontWeight="SemiBold" /><TextBlock Grid.Column="1" Text="目前內容" FontWeight="SemiBold" /><TextBlock Grid.Column="2" Text="來源" FontWeight="SemiBold" />
+                            </Grid>
+                            <ItemsControl x:Name="CameraInformationRows" ItemsSource="{Binding InformationRows}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid ColumnSpacing="16" Padding="0,8">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="90" /><ColumnDefinition Width="*" /><ColumnDefinition Width="150" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Label}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Text="{Binding Value}" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                                            <TextBlock Grid.Column="2" Text="{Binding Source}" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                     </StackPanel>
                     <StackPanel x:Name="ExportContent" Spacing="16" Visibility="Collapsed">
                         <TextBlock Text="匯出設定" Style="{ThemeResource TitleTextBlockStyle}" />
-                        <NumberBox Header="正方形輸出尺寸（px）" Minimum="320" Maximum="8192" Value="{Binding OutputSize, Mode=TwoWay}" />
-                        <StackPanel Spacing="8"><TextBlock Text="JPG 品質" /><Slider Minimum="50" Maximum="100" StepFrequency="1" Value="{Binding JpegQuality, Mode=TwoWay}" AutomationProperties.Name="JPG 品質" /></StackPanel>
-                        <TextBlock Text="輸出為 1:1 JPG。裁切與安全線僅用於預覽，不會寫入成品。" TextWrapping="Wrap" />
+                        <TextBlock Text="格式與尺寸" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <ComboBox x:Name="SettingsExportFormatBox" Header="輸出格式" HorizontalAlignment="Stretch" ItemsSource="{Binding ExportFormats}" SelectedIndex="{Binding ExportFormatIndex, Mode=TwoWay}" />
+                        <ComboBox x:Name="SettingsExportSizeBox" Header="輸出尺寸" HorizontalAlignment="Stretch" ItemsSource="{Binding ExportSizes}" SelectedIndex="{Binding ExportSizeIndex, Mode=TwoWay}" />
+                        <NumberBox x:Name="ExportCustomSizeBox" Header="自訂尺寸（px）" Minimum="320" Maximum="8192" SmallChange="1" Value="{Binding OutputSize, Mode=TwoWay}"
+                                   Visibility="{Binding ShowCustomExportSize, Converter={StaticResource BoolVisibility}}" ToolTipService.ToolTip="正方形單邊像素，320～8192。" />
+                        <StackPanel Spacing="6">
+                            <Grid><TextBlock Text="品質" /><TextBlock Text="{Binding ExportQualityText}" HorizontalAlignment="Right" /></Grid>
+                            <Slider x:Name="SettingsExportQualitySlider" Minimum="1" Maximum="100" StepFrequency="1" Value="{Binding ExportQuality, Mode=TwoWay}" AutomationProperties.Name="品質"
+                                    Visibility="{Binding ShowExportQuality, Converter={StaticResource BoolVisibility}}" />
+                            <TextBlock Text="無損" Visibility="{Binding ShowExportLossless, Converter={StaticResource BoolVisibility}}" />
+                        </StackPanel>
+                        <ToggleSwitch x:Name="WebpLosslessSwitch" Header="WebP 無損" OnContent="開啟" OffContent="關閉" IsOn="{Binding WebpLossless, Mode=TwoWay}" Visibility="{Binding ShowWebpOptions, Converter={StaticResource BoolVisibility}}" />
+                        <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <TextBlock Text="儲存" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                            <TextBox Header="儲存位置" IsReadOnly="True" Text="{Binding ExportDirectory, Mode=OneWay}" PlaceholderText="未指定時，匯出時選擇" ToolTipService.ToolTip="{Binding ExportDirectory}" />
+                            <Button Grid.Column="1" Content="選擇資料夾" VerticalAlignment="Bottom" Click="ChooseExportDirectory_Click" />
+                        </Grid>
+                        <ComboBox Header="檔名規則" HorizontalAlignment="Stretch" ItemsSource="{Binding FileNameModes}" SelectedIndex="{Binding FileNameMode, Mode=TwoWay}" />
+                        <TextBox Header="自訂規則" Text="{Binding FileNamePattern, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Visibility="{Binding ShowCustomFileName, Converter={StaticResource BoolVisibility}}"
+                                 ToolTipService.ToolTip="{}{name}：原檔名；{date}：拍攝日期 yyyyMMdd，缺少時使用匯出日期。" />
+                        <TextBlock Text="{Binding FileNameExample}" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <ComboBox Header="同名檔案" HorizontalAlignment="Stretch" ItemsSource="{Binding ConflictModes}" SelectedIndex="{Binding ConflictMode, Mode=TwoWay}" />
+                        <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <TextBlock Text="拍攝資訊" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <CheckBox Content="保留拍攝資訊" IsChecked="{Binding IncludeExportMetadata, Mode=TwoWay}" ToolTipService.ToolTip="將機身、鏡頭與拍攝參數寫入檔案。" />
+                        <Rectangle Height="1" Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        <TextBlock Text="完成後" Style="{ThemeResource SubtitleTextBlockStyle}" />
+                        <CheckBox Content="匯出後開啟資料夾" IsChecked="{Binding OpenExportFolder, Mode=TwoWay}" />
+                        <CheckBox Content="記住匯出位置" IsChecked="{Binding RememberExportLocation, Mode=TwoWay}" />
+                        <TextBlock Text="裁切與安全線不會寫入成品。" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Text="{Binding ErrorText}" TextWrapping="Wrap" Visibility="{Binding HasError, Converter={StaticResource BoolVisibility}}" AutomationProperties.LiveSetting="Polite" />
                     </StackPanel>
                     <TextBlock Grid.Row="1" Text="{Binding PersistenceError}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                 </Grid>

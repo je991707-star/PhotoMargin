@@ -2,6 +2,12 @@
 
 ## 分層
 
+Data 的位置、雙檔交易與可攜設定集由 `DataLocation`／`DataRepository`／`SettingsBundle` 集中管理；原始內建表是嵌入資源，個人狀態存入執行檔旁 Data 或固定使用者替代位置。資料檔 schemaVersion 1，內部偏好版本仍為 10，詳見 [DATA-SETTINGS-20261020.md](DATA-SETTINGS-20261020.md)。匯入偏好與目前作品可分別保存為 Layout／WorkLayout，避免匯入時重新套用版面。
+
+目前設定 JSON 為 **格式 10**（接受 2–9），新增獨立 `ExportPreferences` 與 `MainViewModel.Export`，統一主畫面／設定頁的格式、品質與儲存偏好。尺寸沿用作品 Layout.OutputSize；八組版面預設不變。詳見 `EXPORT-20261020.md`。
+
+格式 9 是 RAW 快照的歷史起點，格式 8 是八組版面資料的歷史起點，既有預設與模板修訂 2 保持。RAW 功能使用 `RawMetadataReader`（Imaging，沿用 MetadataExtractor 2.9.3，僅 RW2 metadata）與 `MainViewModel.RawInformation`（App，來源／合併／取消／快照）。`PhotoInformation` 型別只容納既有八欄資訊，不含方向、尺寸、色彩、GPS 或像素。相機資訊設定恢復於版面與匯出之間，與主畫面綁定同一個 ViewModel。照片 EXIF、RAW 已套用層、手動欄位來源分開保存；原生差異確認後才提交，來源／資訊／請求版本與取消權杖阻止過期結果套用。RAW 不進入 ImageLoader 或 MagickImage，不完整解碼感光元件資料；MetadataExtractor 可解析其內嵌 JPEG 的 EXIF，但不把該影像用作作品。詳見 `UI-RAW-INFORMATION-20261017.md`。
+
 ```text
 PhotoMargin.Core     幾何、方向政策、資料模型、排版與驗證；不依賴 WinUI 或影像函式庫
 PhotoMargin.Imaging  解碼、EXIF、色彩、字形量測、合成與匯出；封裝 Magick.NET／MetadataExtractor
@@ -37,7 +43,7 @@ Reload 在確認後以背景工作重新讀取 EXIF，不重載圖片或重設�
 | EXIF Orientation | `AutoOrient()`；另以 Orientation 6 的原始直向樣本驗證校正後為橫向 |
 | ICC | 有嵌入描述檔時以該描述檔轉至 `ColorProfiles.SRGB`；輸出重新附加 sRGB 描述檔 |
 | 透明合成 | 移除 alpha 前設定白底；透明 PNG 整合測試確認輸出為無 alpha JPG |
-| JPG 編碼 | 品質 50–100；輸出畫布尺寸由整合測試驗證 |
+| 匯出編碼 | JPG／PNG／WebP 一般或無損；JPG／WebP 品質 1–100，尺寸／metadata／ICC 由整合測試驗證。共用完整尺寸 Compose，不改動版面。詳見 EXPORT-20261020.md |
 | 中文文字 | TextGeometry 將內建字體選項解析為實體字體檔；中文回退至系統微軟正黑體，量測實際墨跡並與繪製共用字體與基線；整合測試檢查中文及拉丁字形的安全邊界 |
 
 MetadataExtractor 2.9.3（Apache-2.0）只負責讀取中繼資料，不寫回來源檔。數值使用 rational 原值轉換，不由描述字串反推。輸出畫布為新影像，寫入前移除 metadata，再附加 sRGB profile，因此不轉存 GPS 或完整 EXIF。

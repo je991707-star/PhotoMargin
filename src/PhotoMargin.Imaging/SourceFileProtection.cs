@@ -6,6 +6,12 @@ namespace PhotoMargin.Imaging;
 
 internal static class SourceFileProtection
 {
+    public static void RequireSameFile(FileStream approved, string destination)
+    {
+        using var target = new FileStream(destination, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        if (Identity(approved.SafeFileHandle) != Identity(target.SafeFileHandle))
+            throw new IOException("確認後目標檔案已變更，請重新匯出。");
+    }
     public static void ThrowIfSameFile(FileStream source, string destination)
     {
         FileStream target;

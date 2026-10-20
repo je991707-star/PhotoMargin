@@ -15,7 +15,8 @@ public sealed class SettingsLoadException(string message, Exception? inner = nul
 
 public sealed record PersistedSettings
 {
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 10;
+    public ExportPreferences? Export { get; init; }
     public int Version { get; init; } = CurrentVersion;
     public LayoutSettings Layout { get; init; } = new();
     public bool ShowGuides { get; init; } = true;
@@ -25,6 +26,8 @@ public sealed record PersistedSettings
     public string? SelectedMarginRuleId { get; init; } = MarginRule.DefaultId;
     public SourceAspect DemonstrationAspect { get; init; } = SourceAspect.FourByThree;
     public InformationArrangement? DemonstrationArrangement { get; init; }
+    public WorkInformationSnapshot? WorkInformation { get; init; }
+    public LayoutSettings? WorkLayout { get; init; }
 }
 
 public sealed class SettingsStore
@@ -35,18 +38,18 @@ public sealed class SettingsStore
     };
 
     private readonly string settingsPath;
+    private readonly DataRepository? dataRepository;
+    public string DataDirectory => dataRepository?.DirectoryPath ?? Path.GetDirectoryName(settingsPath)!;
+    public string DataNotice => dataRepository?.RecoveryNotice ?? "";
+    internal DataRepository Repository => dataRepository ?? throw new InvalidOperationException("此測試用舊格式儲存庫不支援設定集。");
     private readonly SemaphoreSlim writeGate = new(1, 1);
     private SettingsLoadException? loadFailure;
 
-    public SettingsStore() : this(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "PhotoMargin",
-        "settings.json"))
-    {
-    }
+    public SettingsStore() : this(DataLocation.Current) { }
+    internal SettingsStore(DataLocation location) { settingsPath = location.SettingsPath; dataRepository = new(location); }
 
     internal SettingsStore(string settingsPath) => this.settingsPath = Path.GetFullPath(settingsPath);
-    private static PersistedSettings InitialSettings()
+    internal static PersistedSettings InitialSettings()
     {
         var builtIn = BuiltInMarginPresets.Create();
         return new() { MarginRules = [builtIn], Layout = builtIn.ForAspect(SourceAspect.FourByThree).ApplyTo(new()) };
@@ -54,58 +57,19 @@ public sealed class SettingsStore
 
     public async Task<PersistedSettings> LoadAsync(CancellationToken cancellationToken = default)
     {
+        if (dataRepository is not null) return await dataRepository.LoadAsync(cancellationToken).ConfigureAwait(false);
         await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             // A reader may finish reading the previous snapshot while another process replaces it.
             await using var stream = new FileStream(settingsPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             var value = await JsonSerializer.DeserializeAsync<PersistedSettings>(stream, Options, cancellationToken).ConfigureAwait(false);
-            if (value is null || value.Version is not (2 or 3 or 4 or 5 or 6 or 7 or PersistedSettings.CurrentVersion))
+            if (value is null || value.Version is not (2 or 3 or 4 or 5 or 6 or 7 or 8 or 9 or PersistedSettings.CurrentVersion))
             {
                 throw new InvalidDataException("設定內容為空或格式版本不受支援。");
             }
 
-            var layout = (value.Layout ?? new LayoutSettings()).Validate();
-            // Previous shipped UI had no explicit 5:4 selection entrance: the
-            // dual-true combination was its automatic default. Preserve 5:4-only
-            // choices and all explicit v7 combinations. Never alter numeric values.
-            if (value.Version < 7 && layout.ProtectFourByFive && layout.ProtectFiveByFour)
-                layout = layout with { ProtectFiveByFour = false };
-            var rules = (value.MarginRules ?? []).Where(rule => rule is not null && !string.IsNullOrWhiteSpace(rule.Id))
-                .DistinctBy(rule => rule.Id).Select(rule => NormalizeRule(rule, value.Version < 7)).ToList();
-            // Only legacy documents need a built-in seed. A v4 empty list is deliberate.
-            if (value.Version < 4 && !rules.Any(rule => rule.Id == MarginRule.DefaultId)) rules.Insert(0, MarginRule.FromLayout(layout).Validate());
-            // Catalog revisions are independent of the settings schema. A v8
-            // document can still contain revision 0/1 preset data.
-            var oldBuiltIn = rules.FirstOrDefault(rule => rule.Id == MarginRule.DefaultId);
-            if (oldBuiltIn is not null)
-            {
-                var active = layout.Arrangement;
-                var work = MarginConfiguration.From(MarginRule.FromLayout(layout));
-                var refreshed = BuiltInMarginPresets.RefreshPreviousCatalog(oldBuiltIn, rules.Select(rule => rule.Name));
-                var upgraded = BuiltInMarginPresets.UpgradeLegacy(refreshed.Current);
-                // Never replace a manually adjusted work snapshot. A matching
-                // copy of the selected built-in follows its repaired configuration.
-                var followsPreviousCatalog = oldBuiltIn.BuiltInRevision == 1 &&
-                    work == oldBuiltIn.ForAspect(SourceAspect.FourByThree, active);
-                var followsLegacy = oldBuiltIn.BuiltInRevision == 0 &&
-                    oldBuiltIn.ForAspect(SourceAspect.FourByThree, active) == BuiltInMarginPresets.LegacyConfiguration &&
-                    work == BuiltInMarginPresets.LegacyConfiguration;
-                if (value.SelectedMarginRuleId == MarginRule.DefaultId && (followsPreviousCatalog || followsLegacy))
-                    layout = upgraded.ForAspect(SourceAspect.FourByThree, active).ApplyTo(layout);
-                rules[rules.IndexOf(oldBuiltIn)] = upgraded;
-                if (refreshed.Backup is not null) rules.Add(refreshed.Backup);
-            }
-            var loaded = value with
-            {
-                Version = PersistedSettings.CurrentVersion,
-                Layout = layout with { Visibility = layout.Visibility ?? new FieldVisibility() },
-                MarginRules = rules,
-                DemonstrationAspect = Enum.IsDefined(value.DemonstrationAspect) ? value.DemonstrationAspect : SourceAspect.FourByThree,
-                DemonstrationArrangement = (value.DemonstrationArrangement ?? layout.Arrangement) == InformationArrangement.Stacked
-                    ? InformationArrangement.Stacked : InformationArrangement.TwoColumns,
-                Theme = Enum.IsDefined(value.Theme) ? value.Theme : ThemePreference.System
-            };
+            var loaded = NormalizeLegacy(value);
             loadFailure = null;
             return loaded;
         }
@@ -125,6 +89,60 @@ public sealed class SettingsStore
         finally { writeGate.Release(); }
     }
 
+    internal static PersistedSettings ReadLegacyForData(string path)
+    {
+        var value = JsonSerializer.Deserialize<PersistedSettings>(DataRepository.ReadLimited(path), Options)
+            ?? throw new InvalidDataException("舊設定為空。");
+        return NormalizeLegacy(value, false);
+    }
+    internal static PersistedSettings NormalizeLegacy(PersistedSettings value, bool refreshBuiltIns = true)
+    {
+            if (value.Version is < 2 or > PersistedSettings.CurrentVersion) throw new UnsupportedDataVersionException("不支援此舊設定版本。");
+            var layout = (value.Layout ?? new LayoutSettings()).Validate();
+            ValidateWorkInformation(value.WorkInformation);
+            // Previous shipped UI had no explicit 5:4 selection entrance: the
+            // dual-true combination was its automatic default. Preserve 5:4-only
+            // choices and all explicit v7 combinations. Never alter numeric values.
+            if (value.Version < 7 && layout.ProtectFourByFive && layout.ProtectFiveByFour)
+                layout = layout with { ProtectFiveByFour = false };
+            var rules = (value.MarginRules ?? []).Where(rule => rule is not null && !string.IsNullOrWhiteSpace(rule.Id))
+                .DistinctBy(rule => rule.Id).Select(rule => NormalizeRule(rule, value.Version < 7)).ToList();
+            // Only legacy documents need a built-in seed. A v4 empty list is deliberate.
+            if (value.Version < 4 && !rules.Any(rule => rule.Id == MarginRule.DefaultId)) rules.Insert(0, MarginRule.FromLayout(layout).Validate());
+            // Catalog revisions are independent of the settings schema. A v8
+            // document can still contain revision 0/1 preset data.
+            var oldBuiltIn = rules.FirstOrDefault(rule => rule.Id == MarginRule.DefaultId);
+            if (oldBuiltIn is not null && refreshBuiltIns)
+            {
+                var active = layout.Arrangement;
+                var work = MarginConfiguration.From(MarginRule.FromLayout(layout));
+                var refreshed = BuiltInMarginPresets.RefreshPreviousCatalog(oldBuiltIn, rules.Select(rule => rule.Name));
+                var upgraded = BuiltInMarginPresets.UpgradeLegacy(refreshed.Current);
+                // Never replace a manually adjusted work snapshot. A matching
+                // copy of the selected built-in follows its repaired configuration.
+                var followsPreviousCatalog = oldBuiltIn.BuiltInRevision == 1 &&
+                    work == oldBuiltIn.ForAspect(SourceAspect.FourByThree, active);
+                var followsLegacy = oldBuiltIn.BuiltInRevision == 0 &&
+                    oldBuiltIn.ForAspect(SourceAspect.FourByThree, active) == BuiltInMarginPresets.LegacyConfiguration &&
+                    work == BuiltInMarginPresets.LegacyConfiguration;
+                if (value.SelectedMarginRuleId == MarginRule.DefaultId && (followsPreviousCatalog || followsLegacy))
+                    layout = upgraded.ForAspect(SourceAspect.FourByThree, active).ApplyTo(layout);
+                rules[rules.IndexOf(oldBuiltIn)] = upgraded;
+                if (refreshed.Backup is not null) rules.Add(refreshed.Backup);
+            }
+            return value with
+            {
+                Version = PersistedSettings.CurrentVersion,
+                Export = (value.Export ?? new ExportPreferences { JpegQuality = layout.JpegQuality, Directory = value.LastOutputDirectory }).Validate(),
+                Layout = layout with { Visibility = layout.Visibility ?? new FieldVisibility() },
+                MarginRules = rules,
+                DemonstrationAspect = Enum.IsDefined(value.DemonstrationAspect) ? value.DemonstrationAspect : SourceAspect.FourByThree,
+                DemonstrationArrangement = (value.DemonstrationArrangement ?? layout.Arrangement) == InformationArrangement.Stacked
+                    ? InformationArrangement.Stacked : InformationArrangement.TwoColumns,
+                Theme = Enum.IsDefined(value.Theme) ? value.Theme : ThemePreference.System
+            };
+    }
+
     private static MarginRule NormalizeRule(MarginRule rule, bool migrateDualProtection)
     {
         var normalized = rule.Validate();
@@ -137,6 +155,18 @@ public sealed class SettingsStore
                 normalized = normalized.WithConfiguration(aspect, arrangement, configuration with { ProtectLandscape = false });
         }
         return normalized;
+    }
+
+    internal static void ValidateWorkInformation(WorkInformationSnapshot? value)
+    {
+        if (value is null) return;
+        if (string.IsNullOrWhiteSpace(value.SourcePath) || value.Length < 0 || value.PhotoExif is null || value.Current is null ||
+            value.Origins is null || value.Origins.Count != Enum.GetValues<InformationField>().Length ||
+            value.Origins.Any(pair => !Enum.IsDefined(pair.Key) || !Enum.IsDefined(pair.Value)) || !ValidTime(value.Current.Time) ||
+            value.Raw is { } raw && (string.IsNullOrWhiteSpace(raw.SourcePath) || raw.Metadata is null || raw.AppliedValues is null ||
+                raw.AppliedFields is null || raw.AppliedFields.Any(field => !Enum.IsDefined(field)) || !ValidTime(raw.AppliedValues.Time)))
+            throw new InvalidDataException("已保存的照片／RAW 資訊快照無效；為避免遺失資料，請修復設定後重試。");
+        static bool ValidTime(TimeSpan? time) => time is null || time >= TimeSpan.Zero && time < TimeSpan.FromDays(1);
     }
 
     private bool IsNewDirectoryLocation()
@@ -156,6 +186,7 @@ public sealed class SettingsStore
 
     public async Task SaveAsync(PersistedSettings settings, CancellationToken cancellationToken = default)
     {
+        if (dataRepository is not null) { await dataRepository.SaveAsync(settings, cancellationToken).ConfigureAwait(false); return; }
         await writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         string? temporary = null;
         try

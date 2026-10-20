@@ -73,9 +73,15 @@ public sealed partial class MainWindow
                 "Reference-size layout keeps preview left and editor right", checks);
             await CaptureWindowAsync("preset-apply-dark.png");
 
-            modeOptions.SelectedIndex = 1; await Task.Delay(150);
+            var nativeSelections = new List<(int Index, int Added)>();
+            modeOptions.SelectionChanged += (_, args) => nativeSelections.Add((modeOptions.SelectedIndex, args.AddedItems.Count));
+            SelectPresetMode(modeOptions, 1); await Task.Delay(150);
+            File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "preset-native-selections.json"),
+                JsonSerializer.Serialize(nativeSelections.Select(change => new { change.Index, change.Added })));
+            Check(modeOptions.SelectedIndex == 1 && Descendants(modeOptions).OfType<RadioButton>().ElementAt(1).IsChecked == true,
+                "Native child radio, parent selection and accepted editor mode remain synchronized", checks);
             Check(ViewModel.RuleEditor.IsEditMode && delete.IsEnabled, "Native edit mode enables custom-preset delete", checks);
-            side.Value = 111; await Task.Delay(100); modeOptions.SelectedIndex = 0;
+            side.Value = 111; await Task.Delay(100); SelectPresetMode(modeOptions, 0);
             var discard = await WaitForPresetDialogAsync("放棄尚未儲存的預設修改？");
             Check(ViewModel.RuleEditor.IsEditMode && ViewModel.RuleEditor.Side == 111 && discard.DefaultButton == ContentDialogButton.Close,
                 "Mode change asks before discarding and keeps the draft while awaiting confirmation", checks);
@@ -83,13 +89,13 @@ public sealed partial class MainWindow
             await UntilPresetAsync(() => ViewModel.RuleEditor.CanEdit); await Task.Delay(100);
             Check(modeOptions.SelectedIndex == 1 && side.Value == 111 && ViewModel.MarginRules.Single(rule => rule.Id == preset.Id).Side == 64,
                 "Cancel mode change retains edit selection and unsaved draft", checks);
-            modeOptions.SelectedIndex = 0; discard = await WaitForPresetDialogAsync("放棄尚未儲存的預設修改？");
+            SelectPresetMode(modeOptions, 0); discard = await WaitForPresetDialogAsync("放棄尚未儲存的預設修改？");
             InvokeButton(Descendants(discard).OfType<Button>().Single(button => button.Name == "PrimaryButton"));
             await UntilPresetAsync(() => ViewModel.RuleEditor.CanEdit && !ViewModel.RuleEditor.IsEditMode); await Task.Delay(100);
             Check(modeOptions.SelectedIndex == 0 && side.Value == 64 && ViewModel.PhotoSideMargin == 64,
                 "Confirmed discard restores work without changing saved preset", checks);
 
-            modeOptions.SelectedIndex = 1; await Task.Delay(100); side.Value = 92; name.Text = "Renamed UI preset";
+            SelectPresetMode(modeOptions, 1); await Task.Delay(100); side.Value = 92; name.Text = "Renamed UI preset";
             await Task.Delay(100); InvokeButton(save);
             await UntilPresetAsync(() => !ViewModel.RuleEditor.IsSaving && ViewModel.MarginRules.Any(rule => rule.Id == preset.Id && rule.Side == 92));
             Check(ViewModel.MarginRules.Count == 2 && ViewModel.MarginRules.Single(rule => rule.Id == preset.Id).Name == "Renamed UI preset" && ViewModel.PhotoSideMargin == 64,
@@ -160,6 +166,14 @@ public sealed partial class MainWindow
         await UntilPresetAsync(() => (dialog = VisualTreeHelper.GetOpenPopupsForXamlRoot(RootGrid.XamlRoot)
             .SelectMany(popup => Descendants(popup.Child).Prepend(popup.Child)).OfType<ContentDialog>().FirstOrDefault(candidate => candidate.Title?.ToString() == title)) is not null);
         await Task.Delay(150); return dialog!;
+    }
+    private static void SelectPresetMode(RadioButtons options, int index)
+    {
+        // Exercise the native child radio, not the parent's SelectedIndex setter.
+        var radio = Descendants(options).OfType<RadioButton>().ElementAt(index);
+        ((Microsoft.UI.Xaml.Automation.Provider.ISelectionItemProvider)
+            new Microsoft.UI.Xaml.Automation.Peers.RadioButtonAutomationPeer(radio)
+                .GetPattern(Microsoft.UI.Xaml.Automation.Peers.PatternInterface.SelectionItem)).Select();
     }
     private static async Task UntilPresetAsync(Func<bool> condition)
     {

@@ -2,6 +2,7 @@
 **/obj/
 .vs/
 artifacts/
+**/Data/
 *.user
 startup-error.log
 .env

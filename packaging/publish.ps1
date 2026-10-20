@@ -49,7 +49,39 @@ if (-not (Test-Path -LiteralPath (Join-Path $stagingDirectory 'PhotoMargin.App.e
 }
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'README.md') -Destination $stagingDirectory
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'docs\THIRD_PARTY_NOTICES.md') -Destination $stagingDirectory
+if (Test-Path -LiteralPath (Join-Path $stagingDirectory 'Data')) {
+    throw 'Refusing to package personal Data as application content.'
+}
 Compress-Archive -Path (Join-Path $stagingDirectory '*') -DestinationPath $stagingArchive -CompressionLevel Optimal
+
+# The distributable ZIP never includes Data. Preserve an existing local install's
+# Data only after archiving, before promotion; retain the previous directory too.
+$existingData = [System.IO.Path]::GetFullPath((Join-Path $publishDirectory 'Data'))
+$stagedData = [System.IO.Path]::GetFullPath((Join-Path $stagingDirectory 'Data'))
+Assert-ArtifactPath $existingData
+Assert-ArtifactPath $stagedData
+if (Test-Path -LiteralPath $existingData -PathType Container) {
+    $pendingData = New-Object 'System.Collections.Generic.Queue[string]'
+    $pendingData.Enqueue($existingData)
+    while ($pendingData.Count -gt 0) {
+        $dataEntry = $pendingData.Dequeue()
+        $entryAttributes = [System.IO.File]::GetAttributes($dataEntry)
+        if (($entryAttributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Data contains a reparse point; close PhotoMargin and preserve it manually before updating.'
+        }
+        if (($entryAttributes -band [System.IO.FileAttributes]::Directory) -ne 0) {
+            foreach ($child in [System.IO.Directory]::GetFileSystemEntries($dataEntry)) { $pendingData.Enqueue($child) }
+        }
+    }
+    $preserveLock = [System.IO.File]::Open((Join-Path $existingData '.data.lock'), [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
+    try {
+        New-Item -ItemType Directory -Path $stagedData | Out-Null
+        foreach ($entry in Get-ChildItem -LiteralPath $existingData -Force) {
+            if ($entry.Name -ne '.data.lock') { Copy-Item -LiteralPath $entry.FullName -Destination $stagedData -Recurse }
+        }
+    }
+    finally { $preserveLock.Dispose() }
+}
 
 # Only promote a completely built and archived release. Keep the previous release
 # recoverable, and restore it if either promotion fails. No recursive deletion.

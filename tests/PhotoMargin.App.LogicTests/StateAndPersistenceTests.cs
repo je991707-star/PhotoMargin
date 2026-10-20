@@ -104,7 +104,7 @@ public sealed partial class StateAndPersistenceTests : IDisposable
         await vm.LoadPhotoAsync(Source()); await Until(() => vm.CanExport);
         var output = Path.Combine(root, "exported.jpg"); await vm.ExportAsync(output);
         using var image = new MagickImage(output); Assert.Equal(1080u, image.Width); Assert.Equal(1080u, image.Height);
-        Assert.StartsWith("已匯出：", vm.StatusText); Assert.Contains("無法儲存設定", vm.PersistenceError);
+        Assert.StartsWith("已匯出 JPG ·", vm.StatusText); Assert.Contains("無法儲存設定", vm.PersistenceError);
     });
 
     [Fact]

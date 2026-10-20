@@ -1,5 +1,6 @@
 using PhotoMargin.Core;
 using PhotoMargin.Core.Models;
+using System.Text.Json;
 
 namespace PhotoMargin.App.Services;
 
@@ -8,27 +9,20 @@ namespace PhotoMargin.App.Services;
 public static class BuiltInMarginPresets
 {
     public const int CurrentRevision = 2;
+    private static readonly Lazy<MarginRule> Resource = new(() =>
+    {
+        using var stream = typeof(BuiltInMarginPresets).Assembly.GetManifestResourceStream("PhotoMargin.BuiltInMarginPresets.json")
+            ?? throw new InvalidDataException("缺少內建預設資源。");
+        return (JsonSerializer.Deserialize<MarginRule>(stream, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidDataException("內建預設資源無效。")).Validate();
+    });
     internal static MarginConfiguration LegacyConfiguration => new()
     { Side = 48, Top = 36, Bottom = 72, Gap = 24, ExposureItemGap = 18, Extra = 24, ProtectPortrait = true, ProtectLandscape = false };
 
     public static MarginRule Create(string name = "預設規則")
     {
-        var configurations = new RatioArrangementConfigurations
-        {
-            SixteenByNine = Pair(40, 100, 170, 150, 50, 20),
-            FiveByFour = Pair(48, 50, 90, 70, 50, 20),
-            FourByThree = Pair(48, 100, 112, 100, 32, 20),
-            ThreeByTwo = Pair(48, 100, 136, 106, 50, 18)
-        };
-        return new MarginRule { Name = name, BuiltInRevision = CurrentRevision, Arrangements = configurations }.Validate();
+        return (Resource.Value with { Name = name }).Validate();
     }
-
-    private static ArrangementConfigurations Pair(double side, double top, double horizontalBottom,
-        double verticalBottom, double verticalGap, double verticalExposureGap) => new()
-    {
-        TwoColumns = new() { Side = side, Top = top, Bottom = horizontalBottom, Gap = 50, ExposureItemGap = 18, Extra = 24 },
-        Stacked = new() { Side = side, Top = top, Bottom = verticalBottom, Gap = verticalGap, ExposureItemGap = verticalExposureGap, Extra = 24 }
-    };
 
     internal static MarginRule UpgradeLegacy(MarginRule source)
     {

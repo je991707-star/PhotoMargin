@@ -1,9 +1,11 @@
 <Application
     x:Class="PhotoMargin.App.App"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:PhotoMargin.App.Views">
     <Application.Resources>
         <ResourceDictionary>
+            <views:BooleanVisibilityConverter x:Key="BoolVisibility" />
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
                     <Color x:Key="SystemAccentColor">#59CEF7</Color>

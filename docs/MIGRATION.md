@@ -1,5 +1,23 @@
 # 遷移記錄
 
+## 2026-10-20：Data schemaVersion 1、設定集與色彩模式
+
+新 Data 未初始化時，遷移舊 LocalAppData 單檔版本 2–10 至 settings／presets 成對資料；不刷新個人已修改的內建配置，不刪來源。已有 Data 後不再重讀舊檔。設定檔 schemaVersion 1 與偏好 DTO 版本 10 分別管理；舊 ThemePreference 的 System=0／Dark=1／Light=2 不變，ComboBox 順序以映射提供跟隨系統／淺色／深色。完整交易、ZIP 與本機作品保護見 [Data 說明](DATA-SETTINGS-20261020.md)。
+
+## 2026-10-20：格式 10 與獨立匯出偏好
+
+目前格式 10，接受 2–9。新增 `export`，保存格式、分開的 JPG／WebP 品質、WebP 無損、儲存目錄、檔名規則、同名策略、拍攝資訊與完成後選項。舊資料缺少 Export 時複製 Layout.JpegQuality／LastOutputDirectory，尺寸沿用 Layout.OutputSize；不變更八組配置或 RAW 快照。關閉記住位置時，新舊目錄欄位均不保存。詳見 [匯出功能](EXPORT-20261020.md)。
+
+以下為歷史遷移記錄。
+
+## 2026-10-17：格式 9 與 RAW 資訊快照
+
+目前格式為 9，接受 2–8。新增可空的 `workInformation`，保存目前作品的路徑、長度、最後寫入時間、照片 EXIF、已確認 RAW metadata／套用欄位與值、目前欄位值及逐欄來源。舊設定沒有此欄位時保持 null，不虛構 RAW 或照片，不更動原版面／字級／預設。內建模板修訂仍獨立為 2。無效快照走既有讀取失敗防覆寫保護，不靜默刪除快照。
+
+重啟仍不自動載入作品；使用者重新載入相符的 JPG／PNG 才還原快照，不開啟 RAW 原檔。切換其他作品清除上一張 RAW 關聯與補入資料，再保存新快照。照片 Reload 保留已確認 RAW 層，確認後才清除手動覆寫；RAW Reload 獨立重新讀取及確認，檔案失效時保留已套用值。詳細資料分層、實檔及原生測試見 `UI-RAW-INFORMATION-20261017.md`。
+
+以下格式 8 及更早段落為歷史記錄。
+
 ## 2026-10-17：內建表 revision 2 修復
 
 JSON 格式仍為 8。內建表獨立以 `builtInRevision` 判定遷移，不再受 `Version < 8` 阻擋。revision 1 的既有內建表若異於新表，完整保留成「更新前備份」自訂預設，再更新穩定 ID `default` 的八組配置；已有自訂預設完全不變。相同表只升修訂號，revision 2 的後續編輯不重置。舊 revision 0 仍逐組保留修改。未手動調整的作品副本同步跟隨，其他作品數值及字體保留；重啟不重複備份。詳見 `UI-BUILTIN-FIX-20261017.md`。

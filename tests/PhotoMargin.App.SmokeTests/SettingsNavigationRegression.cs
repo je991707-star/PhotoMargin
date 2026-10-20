@@ -79,8 +79,8 @@ public sealed partial class MainWindow
             Check(EmptyPhotoState.Visibility == Visibility.Visible && PreviewViewport.Visibility == Visibility.Collapsed &&
                   ChangePhotoButton.Visibility == Visibility.Collapsed && SourceSummaryText.Visibility == Visibility.Collapsed,
                 "Empty state shows import prompt, not white canvas or duplicate change-photo action", checks);
-            Check(!SidebarSettingsHost.IsEnabled && Descendants(SidebarContent).OfType<Control>().All(control => !control.IsEnabled),
-                "All sidebar controls are natively disabled without changing their content", checks);
+            Check(!SidebarSettingsHost.IsEnabled && OutputSizeBox.IsEnabled && JpegQualitySlider.IsEnabled && MainExportFormatBox.IsEnabled,
+                "Export preferences remain editable without a photo; photo-specific controls disabled", checks);
             Check(RootGrid.FindName("ImportButton") is null && RootGrid.FindName("ResetLayoutButton") is null, "Removed old UI entrances", checks);
             Check(!BrandImageBox.IsEnabled && BrandImageBox.Items.Count == 1, "Brand images explicitly disabled", checks);
             Check(ReloadExifButton.Content is SymbolIcon { Symbol: Symbol.Refresh }, "Only icon in Reload button", checks);
@@ -89,8 +89,8 @@ public sealed partial class MainWindow
             await CaptureWorkspaceAsync("figma-main-empty.png");
             await CaptureWindowAsync("figma-main-window-empty.png");
             ViewModel.ThemeChoice = 2; await Task.Delay(150);
-            Check(!OutputSizeBox.IsEnabled && !JpegQualitySlider.IsEnabled && !AddRuleButton.IsEnabled && SelectPhotoButton.IsEnabled,
-                "Empty state remains disabled and importable in light theme", checks);
+            Check(OutputSizeBox.IsEnabled && JpegQualitySlider.IsEnabled && !AddRuleButton.IsEnabled && SelectPhotoButton.IsEnabled,
+                "Light-theme empty state allows export preferences and photo import", checks);
             await CaptureWindowAsync("empty-state-light-window.png");
             ViewModel.ThemeChoice = 1; await Task.Delay(100);
             await ViewModel.LoadPhotoAsync(Path.Combine(AppContext.BaseDirectory, "missing-empty-state-test.jpg"));
@@ -208,22 +208,22 @@ public sealed partial class MainWindow
             var nativeToggle = Descendants(navigation).OfType<Button>().First(button => button.Name == "TogglePaneButton");
             InvokeButton(nativeToggle); await Task.Delay(250);
             Check(navigation.IsPaneOpen && toggle.Visibility == Visibility.Visible, "Native toggle reopens reference header", checks);
-            Check(navigation.MenuItems.OfType<NavigationViewItem>().Select(item => item.Tag?.ToString()).SequenceEqual(new[] { "General", "Layout", "Export" }) &&
+            Check(navigation.MenuItems.OfType<NavigationViewItem>().Select(item => item.Tag?.ToString()).SequenceEqual(new[] { "General", "Layout", "Camera", "Export" }) &&
                   !navigation.IsSettingsVisible && page.SelectedSection == SettingsSection.General,
-                "Only General, Layout and Export settings destinations, in order; no duplicate Settings item", checks);
-            Check(page.FindName("CameraItem") is null && page.FindName("CameraContent") is null && Enum.GetValues<SettingsSection>().Length == 3,
-                "Camera settings destination and content removed rather than hidden", checks);
+                "General, Layout, Camera and Export settings destinations, in order; no duplicate Settings item", checks);
+            Check(page.FindName("CameraItem") is not null && page.FindName("CameraContent") is not null && Enum.GetValues<SettingsSection>().Length == 4,
+                "Camera settings destination and metadata content restored", checks);
             var search = (AutoSuggestBox)page.FindName("SettingsSearch");
             search.Text = "相機"; await Task.Delay(400);
-            Check(navigation.MenuItems.OfType<NavigationViewItem>().All(item => item.Visibility == Visibility.Collapsed),
-                "Search cannot expose the removed camera settings destination", checks);
+            Check(navigation.MenuItems.OfType<NavigationViewItem>().Count(item => item.Visibility == Visibility.Visible) == 1,
+                "Search finds the restored camera settings destination", checks);
             search.Text = "版面"; await Task.Delay(400);
             Check(navigation.MenuItems.OfType<NavigationViewItem>().Count(item => item.Visibility == Visibility.Visible) == 1, "Settings search filters navigation", checks);
             search.Text = "";
             await Task.Delay(400);
             await CaptureWorkspaceAsync("figma-settings-general.png");
             await CaptureWindowAsync("figma-settings-window.png");
-            ((RadioButtons)page.FindName("ThemeOptions")).SelectedIndex = 2;
+            ((ComboBox)page.FindName("ThemeOptions")).SelectedIndex = 1;
             Check(RootGrid.RequestedTheme == ElementTheme.Light, "Settings theme applies to common state", checks);
             var homeState = LayoutState(); var homePreview = ViewModel.PreviewBytes;
             var returnEvents = 0; page.BackRequested += (_, _) => returnEvents++;
@@ -315,7 +315,7 @@ public sealed partial class MainWindow
             // Real export, prove guide rendering is separate and source is untouched.
             var export = Path.Combine(AppContext.BaseDirectory, "figma-export.jpg");
             var hashBefore = System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(sample));
-            await ViewModel.ExportAsync(export);
+            ViewModel.ConflictMode = 2; await ViewModel.ExportAsync(export);
             using (var image = new MagickImage(export))
                 Check(image.Width == 1080 && image.Height == 1080 && image.GetExifProfile() is null, "Actual square JPG export without original EXIF", checks);
             var firstExport = await File.ReadAllBytesAsync(export);
@@ -370,7 +370,8 @@ public sealed partial class MainWindow
     {
         RootGrid.UpdateLayout();
         var arrangementBounds = ElementBounds(ArrangementBox); var fontBounds = ElementBounds(FontFamilyBox);
-        Check(SidebarContent.Children.IndexOf(ArrangementBox) + 1 == SidebarContent.Children.IndexOf(FontFamilyBox) &&
+        var photoSettings = (Panel)ArrangementBox.Parent;
+        Check(ReferenceEquals(ArrangementBox.Parent, FontFamilyBox.Parent) && photoSettings.Children.IndexOf(ArrangementBox) + 1 == photoSettings.Children.IndexOf(FontFamilyBox) &&
               Math.Abs(arrangementBounds.Left - fontBounds.Left) < 1 && Math.Abs(arrangementBounds.Width - fontBounds.Width) < 1 &&
               Math.Abs(arrangementBounds.Height - fontBounds.Height) < 1 && arrangementBounds.Bottom < fontBounds.Top,
             "Arrangement sits immediately above font selector with identical native dimensions", checks);

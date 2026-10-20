@@ -6,12 +6,20 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../src/PhotoMargin.App/Assets/BuiltInMarginPresets.json" LogicalName="PhotoMargin.BuiltInMarginPresets.json" />
     <ProjectReference Include="../../src/PhotoMargin.Imaging/PhotoMargin.Imaging.csproj" />
     <PackageReference Include="CommunityToolkit.Mvvm" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" PrivateAssets="all" />
     <Compile Include="../../src/PhotoMargin.App/ViewModels/MainViewModel.cs" Link="Production/MainViewModel.cs" />
+    <Compile Include="../../src/PhotoMargin.App/ViewModels/MainViewModel.Export.cs" Link="Production/MainViewModel.Export.cs" />
+    <Compile Include="../../src/PhotoMargin.App/ViewModels/MainViewModel.Data.cs" Link="Production/MainViewModel.Data.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/DataLocation.cs" Link="Production/DataLocation.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/DataRepository.cs" Link="Production/DataRepository.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/SettingsBundle.cs" Link="Production/SettingsBundle.cs" />
+    <Compile Include="../../src/PhotoMargin.App/ViewModels/MainViewModel.RawInformation.cs" Link="Production/MainViewModel.RawInformation.cs" />
+    <Compile Include="../../src/PhotoMargin.App/Services/PhotoInformation.cs" Link="Production/PhotoInformation.cs" />
     <Compile Include="../../src/PhotoMargin.App/ViewModels/RuleEditorViewModel.cs" Link="Production/RuleEditorViewModel.cs" />
     <Compile Include="../../src/PhotoMargin.App/Services/SettingsStore.cs" Link="Production/SettingsStore.cs" />
     <Compile Include="../../src/PhotoMargin.App/Services/PreviewService.cs" Link="Production/PreviewService.cs" />

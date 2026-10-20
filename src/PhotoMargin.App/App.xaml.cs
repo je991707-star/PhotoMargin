@@ -17,6 +17,34 @@ public partial class App : Application
         try
         {
 #if DEBUG
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-data" or "--verify-data-restore"))
+            {
+                var restore = Environment.GetCommandLineArgs().Contains("--verify-data-restore");
+                var marker = Path.Combine(AppContext.BaseDirectory, "data-regression-location.txt");
+                var testRoot = restore ? File.ReadAllText(marker) : Path.Combine(AppContext.BaseDirectory, "data-regression-" + Guid.NewGuid().ToString("N"));
+                if (!Path.GetFullPath(testRoot).StartsWith(AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase) || !Path.GetFileName(testRoot).StartsWith("data-regression-", StringComparison.Ordinal))
+                    throw new InvalidDataException("Invalid test data path");
+                if (!restore) File.WriteAllText(marker, testRoot);
+                var testWindow = new MainWindow(new Services.SettingsStore(new Services.DataLocation(Path.Combine(testRoot, "Data")))); window = testWindow; window.Activate();
+                _ = testWindow.RunDataManagementRegressionAsync(restore); return;
+            }
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-export" or "--verify-export-restore"))
+            {
+                var restore = Environment.GetCommandLineArgs().Contains("--verify-export-restore");
+                var settings = Path.Combine(AppContext.BaseDirectory, "ui-export-settings.json");
+                if (!restore && File.Exists(settings)) File.Delete(settings);
+                var testWindow = new MainWindow(new Services.SettingsStore(settings)); window = testWindow; window.Activate();
+                _ = testWindow.RunExportRegressionAsync(restore); return;
+            }
+            if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-raw-information" or "--verify-raw-information-restore"))
+            {
+                var restore = Environment.GetCommandLineArgs().Contains("--verify-raw-information-restore");
+                var testSettings = Path.Combine(AppContext.BaseDirectory, restore ? "ui-raw-restore.json" : "ui-raw-information.json");
+                if (!restore && File.Exists(testSettings)) File.Delete(testSettings);
+                if (restore && !File.Exists(testSettings)) throw new InvalidOperationException("請先執行 --verify-raw-information。");
+                var testWindow = new MainWindow(new Services.SettingsStore(testSettings)); window = testWindow; window.Activate();
+                _ = testWindow.RunRawInformationRegressionAsync(restore); return;
+            }
             if (Environment.GetCommandLineArgs().Any(arg => arg is "--verify-builtin-update" or "--verify-builtin-update-restore"))
             {
                 var restore = Environment.GetCommandLineArgs().Contains("--verify-builtin-update-restore");

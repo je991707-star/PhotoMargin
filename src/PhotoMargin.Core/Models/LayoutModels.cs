@@ -61,7 +61,7 @@ public sealed record LayoutSettings
     {
         Arrangement = Enum.IsDefined(Arrangement) ? Arrangement : InformationArrangement.Auto,
         OutputSize = Math.Clamp(OutputSize, 320, 8192),
-        JpegQuality = Math.Clamp(JpegQuality, 50, 100),
+        JpegQuality = Math.Clamp(JpegQuality, 1, 100),
         PhotoSideMargin = Math.Clamp(double.IsFinite(PhotoSideMargin) ? PhotoSideMargin : 48, 0, 400),
         PhotoTopMargin = Math.Clamp(double.IsFinite(PhotoTopMargin) ? PhotoTopMargin : 36, 0, 400),
         PhotoInfoGap = Math.Clamp(double.IsFinite(PhotoInfoGap) ? PhotoInfoGap : 24, 0, 200),

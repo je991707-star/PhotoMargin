@@ -15,12 +15,42 @@ public sealed class ImageRenderer
         Task.Run(() => RenderPreview(photo, layout, showGuides, cancellationToken), cancellationToken);
 
     public byte[] RenderJpeg(LoadedPhoto photo, LayoutResult layout, int quality, CancellationToken cancellationToken = default)
+        => RenderExport(photo, layout, new ExportPreferences { JpegQuality = quality }, null, cancellationToken);
+
+    public byte[] RenderExport(LoadedPhoto photo, LayoutResult layout, ExportPreferences preferences, PhotoMetadata? metadata, CancellationToken cancellationToken = default)
     {
         using var image = Compose(photo, layout, cancellationToken);
         image.Strip();
         image.SetProfile(ColorProfiles.SRGB);
-        image.Format = MagickFormat.Jpeg;
-        image.Quality = (uint)Math.Clamp(quality, 50, 100);
+        image.Orientation = OrientationType.TopLeft;
+        preferences = preferences.Validate();
+        if (preferences.IncludeMetadata && metadata is null) throw new InvalidOperationException("沒有可供寫入的拍攝資訊快照。");
+        image.Format = preferences.Format switch { ExportFormat.Png => MagickFormat.Png, ExportFormat.WebP => MagickFormat.WebP, _ => MagickFormat.Jpeg };
+        image.Quality = (uint)(preferences.Format == ExportFormat.WebP ? preferences.WebpQuality : preferences.Format == ExportFormat.Png ? 90 : preferences.JpegQuality);
+        if (preferences.Format == ExportFormat.WebP) image.Settings.SetDefine(MagickFormat.WebP, "lossless", preferences.WebpLossless ? "true" : "false");
+        if (preferences.Format == ExportFormat.Png)
+        {
+            // Strip leaves a PNG artifact which overrides encoder options.
+            image.SetArtifact("png:include-chunk", "iCCP,eXIf");
+            image.SetArtifact("png:exclude-chunk", "sRGB,date,time");
+            image.Settings.SetDefine(MagickFormat.Png, "preserve-iCCP", "true");
+        }
+        if (preferences.IncludeMetadata && metadata is not null)
+        {
+            var exif = new ExifProfile();
+            if (!string.IsNullOrWhiteSpace(metadata.Model)) exif.SetValue(ExifTag.Model, metadata.Model);
+            if (!string.IsNullOrWhiteSpace(metadata.Make)) exif.SetValue(ExifTag.Make, metadata.Make);
+            if (!string.IsNullOrWhiteSpace(metadata.LensModel)) exif.SetValue(ExifTag.LensModel, metadata.LensModel);
+            if (metadata.FocalLengthMm is > 0) exif.SetValue(ExifTag.FocalLength, new Rational(metadata.FocalLengthMm.Value));
+            if (metadata.FNumber is > 0) exif.SetValue(ExifTag.FNumber, new Rational(metadata.FNumber.Value));
+            if (metadata.ExposureSeconds is > 0) exif.SetValue(ExifTag.ExposureTime, new Rational(metadata.ExposureSeconds.Value));
+            if (metadata.Iso is > 0 and <= ushort.MaxValue) exif.SetValue(ExifTag.ISOSpeedRatings, new[] { (ushort)metadata.Iso.Value });
+            else if (metadata.Iso is > ushort.MaxValue) throw new InvalidOperationException("ISO 超出目前 EXIF 編碼範圍。");
+            if (metadata.CapturedAt is { } date) exif.SetValue(ExifTag.DateTimeOriginal, date.ToString("yyyy:MM:dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture));
+            exif.SetValue(ExifTag.Orientation, (ushort)1);
+            image.SetProfile(exif);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
         return image.ToByteArray();
     }
 

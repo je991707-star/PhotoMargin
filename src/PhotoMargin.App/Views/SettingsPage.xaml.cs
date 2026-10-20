@@ -5,22 +5,29 @@ using System.ComponentModel;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.Storage.Streams;
 using PhotoMargin.App.ViewModels;
+using PhotoMargin.App.Services;
 
 namespace PhotoMargin.App.Views;
 
-public enum SettingsSection { General, Layout, Export }
+public enum SettingsSection { General, Layout, Camera, Export }
 
 public sealed partial class SettingsPage : Page
 {
     private readonly MainViewModel viewModel;
     private bool initialized, settingSelection, returningHome, changingEditor, transitioning;
     private int bitmapVersion;
+    private async void ChooseExportDirectory_Click(object sender, RoutedEventArgs e)
+    {
+        try { if (fileDialogs is not null && await fileDialogs.PickExportDirectoryAsync() is { } path) viewModel.ExportDirectory = path; }
+        catch (Exception error) { viewModel.ReportExportPickerFailure(error); }
+    }
     public event EventHandler? BackRequested;
     internal SettingsSection SelectedSection { get; private set; }
 
-    public SettingsPage(MainViewModel viewModel, SettingsSection destination = SettingsSection.General)
+    public SettingsPage(MainViewModel viewModel, SettingsSection destination = SettingsSection.General, FileDialogService? fileDialogs = null)
     {
         this.viewModel = viewModel;
+        this.fileDialogs = fileDialogs;
         viewModel.RuleEditor.Begin(viewModel.SelectedMarginRuleId);
         InitializeComponent(); DataContext = viewModel;
         SettingsNavigation.RegisterPropertyChangedCallback(NavigationView.IsPaneOpenProperty, (_, _) => UpdateHeaderButtons());
@@ -35,6 +42,7 @@ public sealed partial class SettingsPage : Page
         };
         Unloaded += (_, _) =>
         {
+            rawPageLifetime.Cancel();
             bitmapVersion++; viewModel.RuleEditor.StopPreview(this);
             viewModel.RuleEditor.PropertyChanged -= EditorStateChanged; viewModel.PropertyChanged -= WorkStateChanged;
         };
@@ -49,6 +57,7 @@ public sealed partial class SettingsPage : Page
         CommonSettingsScrollViewer.Visibility = section == SettingsSection.Layout ? Visibility.Collapsed : Visibility.Visible;
         LayoutContent.Visibility = section == SettingsSection.Layout ? Visibility.Visible : Visibility.Collapsed;
         ExportContent.Visibility = section == SettingsSection.Export ? Visibility.Visible : Visibility.Collapsed;
+        CameraContent.Visibility = section == SettingsSection.Camera ? Visibility.Visible : Visibility.Collapsed;
         initialized = true;
         if (IsLoaded)
         {
@@ -62,6 +71,12 @@ public sealed partial class SettingsPage : Page
         if (!settingSelection && args.SelectedItem is NavigationViewItem item && Enum.TryParse<SettingsSection>(item.Tag?.ToString(), out var section))
         {
             if (transitioning || returningHome) return;
+            if (viewModel.IsDataBusy)
+            {
+                settingSelection = true;
+                SettingsNavigation.SelectedItem = SettingsNavigation.MenuItems.OfType<NavigationViewItem>().First(entry => entry.Tag?.ToString() == SelectedSection.ToString());
+                settingSelection = false; return;
+            }
             transitioning = true;
             try
             {
@@ -78,7 +93,7 @@ public sealed partial class SettingsPage : Page
         => _ = RequestBackAsync();
     internal async Task RequestBackAsync()
     {
-        if (returningHome || transitioning) return;
+        if (returningHome || transitioning || viewModel.IsDataBusy) return;
         transitioning = true;
         try
         {
@@ -94,7 +109,7 @@ public sealed partial class SettingsPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot, RequestedTheme = ActualTheme, Title = "放棄尚未儲存的預設修改？",
-            Content = "尚未儲存的編輯草稿將被丟棄；原預設與目前作品保持不變。",
+            Content = "尚未儲存的編輯草稿將被丟棄。",
             PrimaryButtonText = "放棄修改", CloseButtonText = "繼續編輯", DefaultButton = ContentDialogButton.Close
         };
         return await dialog.ShowAsync() == ContentDialogResult.Primary;
@@ -165,8 +180,15 @@ public sealed partial class SettingsPage : Page
     }
     private async void RuleMode_Changed(object sender, SelectionChangedEventArgs args)
     {
-        if (!initialized || changingEditor) return;
-        var target = (PresetMode)RuleModeOptions.SelectedIndex;
+        if (!initialized || changingEditor || viewModel.IsDataBusy || SelectedSection != SettingsSection.Layout) return;
+        // Native child-radio selection can raise SelectionChanged with a valid
+        // AddedItems entry while SelectedIndex still reads -1. Use the event's
+        // selected item, not that transitional dependency-property value. Ignore
+        // empty notifications so they cannot swallow the subsequent real choice.
+        if (args.AddedItems.Count != 1) return;
+        var index = RuleModeOptions.Items.IndexOf(args.AddedItems[0]);
+        if (index is not (0 or 1)) return;
+        var target = (PresetMode)index;
         if (target == viewModel.RuleEditor.Mode) return;
         if (transitioning) return;
         transitioning = true;
@@ -181,7 +203,7 @@ public sealed partial class SettingsPage : Page
     }
     private async void RuleSelection_Changed(object sender, SelectionChangedEventArgs args)
     {
-        if (!initialized || changingEditor) return;
+        if (!initialized || changingEditor || viewModel.IsDataBusy || SelectedSection != SettingsSection.Layout) return;
         var target = RuleEditorSelector.SelectedValue as string;
         // Replacing/removing an ObservableCollection item transiently clears native
         // selection. This is not an explicit user request to abandon a preset.
